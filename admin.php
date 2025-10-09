@@ -292,11 +292,11 @@ $lottery_records = $records_stmt->fetchAll();
         <div class="bg-white rounded-lg shadow-lg p-6 mb-8">
             <div class="flex justify-between items-center">
                 <h1 class="text-3xl font-bold text-gray-800">
-                    <i class="fas fa-cogs text-blue-500 mr-2"></i>
+                    <i class="fa fa-cog text-blue-500 mr-2"></i>
                     管理后台
                 </h1>
                 <a href="index.php" class="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg transition">
-                    <i class="fas fa-home mr-2"></i>返回首页
+                    <i class="fa fa-home mr-2"></i>返回首页
                 </a>
             </div>
         </div>
@@ -304,14 +304,14 @@ $lottery_records = $records_stmt->fetchAll();
         <!-- 消息提示 -->
         <?php if ($message): ?>
             <div class="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-6">
-                <i class="fas fa-check-circle mr-2"></i>
+                <i class="fa fa-check-circle mr-2"></i>
                 <?php echo htmlspecialchars($message); ?>
             </div>
         <?php endif; ?>
 
         <?php if ($error): ?>
             <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-6">
-                <i class="fas fa-exclamation-circle mr-2"></i>
+                <i class="fa fa-exclamation-circle mr-2"></i>
                 <?php echo htmlspecialchars($error); ?>
             </div>
         <?php endif; ?>
@@ -321,22 +321,22 @@ $lottery_records = $records_stmt->fetchAll();
             <div class="border-b border-gray-200">
                 <nav class="-mb-px flex space-x-8 px-6">
                     <button onclick="showTab('projects')" id="tab-projects" class="tab-button py-4 px-1 border-b-2 font-medium text-sm border-blue-500 text-blue-600">
-                        <i class="fas fa-project-diagram mr-2"></i>项目管理
+                        <i class="fa fa-project-diagram mr-2"></i>项目管理
                     </button>
                     <button onclick="showTab('prizes')" id="tab-prizes" class="tab-button py-4 px-1 border-b-2 font-medium text-sm border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300">
-                        <i class="fas fa-gift mr-2"></i>奖品管理
+                        <i class="fa fa-gift mr-2"></i>奖品管理
                     </button>
                     <button onclick="showTab('users')" id="tab-users" class="tab-button py-4 px-1 border-b-2 font-medium text-sm border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300">
-                        <i class="fas fa-users mr-2"></i>用户管理
+                        <i class="fa fa-users mr-2"></i>用户管理
                     </button>
                     <button onclick="showTab('user-times')" id="tab-user-times" class="tab-button py-4 px-1 border-b-2 font-medium text-sm border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300">
-                        <i class="fas fa-clock mr-2"></i>次数分配
+                        <i class="fa fa-clock mr-2"></i>次数分配
                     </button>
                     <button onclick="showTab('records')" id="tab-records" class="tab-button py-4 px-1 border-b-2 font-medium text-sm border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300">
-                        <i class="fas fa-history mr-2"></i>抽奖记录
+                        <i class="fa fa-history mr-2"></i>抽奖记录
                     </button>
                     <button onclick="showTab('logout')" id="tab-logout" class="tab-button py-4 px-1 border-b-2 font-medium text-sm border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300">
-                        <i class="fas fa-sign-out-alt mr-2"></i>退出登录
+                        <i class="fa fa-sign-out-alt mr-2"></i>退出登录
                     </button>
                 </nav>
             </div>
@@ -346,7 +346,7 @@ $lottery_records = $records_stmt->fetchAll();
                 <div class="flex justify-between items-center mb-6">
                     <h2 class="text-xl font-bold text-gray-800">项目管理</h2>
                     <button onclick="showModal('add-project-modal')" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg transition">
-                        <i class="fas fa-plus mr-2"></i>添加项目
+                        <i class="fa fa-plus mr-2"></i>添加项目
                     </button>
                 </div>
                 
@@ -374,10 +374,10 @@ $lottery_records = $records_stmt->fetchAll();
                                 <td class="px-6 py-4"><?php echo date('Y-m-d H:i', strtotime($project['created_at'])); ?></td>
                                 <td class="px-6 py-4">
                                     <button onclick="editProject(<?php echo $project['id']; ?>, '<?php echo htmlspecialchars($project['name'], ENT_QUOTES); ?>')" class="text-blue-600 hover:text-blue-900 mr-3">
-                                        <i class="fas fa-edit"></i>
+                                        <i class="fa fa-edit"></i>
                                     </button>
                                     <button onclick="deleteProject(<?php echo $project['id']; ?>)" class="text-red-600 hover:text-red-900">
-                                        <i class="fas fa-trash"></i>
+                                        <i class="fa fa-trash"></i>
                                     </button>
                                 </td>
                             </tr>
@@ -401,7 +401,7 @@ $lottery_records = $records_stmt->fetchAll();
                         </select>
                     </div>
                     <button onclick="showModal('add-prize-modal')" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg transition">
-                        <i class="fas fa-plus mr-2"></i>添加奖品
+                        <i class="fa fa-plus mr-2"></i>添加奖品
                     </button>
                 </div>
                 
@@ -425,10 +425,10 @@ $lottery_records = $records_stmt->fetchAll();
                                 <td class="px-6 py-4"><?php echo $prize['probability']; ?>%</td>
                                 <td class="px-6 py-4">
                                     <button onclick="editPrize(<?php echo $prize['id']; ?>, '<?php echo htmlspecialchars($prize['name'], ENT_QUOTES); ?>', <?php echo $prize['remaining_quantity']; ?>, <?php echo $prize['probability']; ?>)" class="text-blue-600 hover:text-blue-900 mr-3">
-                                        <i class="fas fa-edit"></i>
+                                        <i class="fa fa-edit"></i>
                                     </button>
                                     <button onclick="deletePrize(<?php echo $prize['id']; ?>)" class="text-red-600 hover:text-red-900">
-                                        <i class="fas fa-trash"></i>
+                                        <i class="fa fa-trash"></i>
                                     </button>
                                 </td>
                             </tr>
@@ -443,7 +443,7 @@ $lottery_records = $records_stmt->fetchAll();
                 <div class="flex justify-between items-center mb-6">
                     <h2 class="text-xl font-bold text-gray-800">用户管理</h2>
                     <button onclick="showModal('add-user-modal')" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg transition">
-                        <i class="fas fa-plus mr-2"></i>添加用户
+                        <i class="fa fa-plus mr-2"></i>添加用户
                     </button>
                 </div>
                 
@@ -467,10 +467,10 @@ $lottery_records = $records_stmt->fetchAll();
                                 <td class="px-6 py-4"><?php echo date('Y-m-d H:i', strtotime($user['created_at'])); ?></td>
                                 <td class="px-6 py-4">
                                     <button onclick="editUser(<?php echo $user['id']; ?>, '<?php echo htmlspecialchars($user['name'], ENT_QUOTES); ?>')" class="text-blue-600 hover:text-blue-900 mr-3">
-                                        <i class="fas fa-edit"></i>
+                                        <i class="fa fa-edit"></i>
                                     </button>
                                     <button onclick="deleteUser(<?php echo $user['id']; ?>)" class="text-red-600 hover:text-red-900">
-                                        <i class="fas fa-trash"></i>
+                                        <i class="fa fa-trash"></i>
                                     </button>
                                 </td>
                             </tr>
@@ -494,7 +494,7 @@ $lottery_records = $records_stmt->fetchAll();
                         </select>
                     </div>
                     <button onclick="showModal('set-times-modal')" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg transition">
-                        <i class="fas fa-plus mr-2"></i>分配次数
+                        <i class="fa fa-plus mr-2"></i>分配次数
                     </button>
                 </div>
                 
@@ -522,7 +522,7 @@ $lottery_records = $records_stmt->fetchAll();
                                 </td>
                                 <td class="px-6 py-4">
                                     <button onclick="editUserTimes(<?php echo $upt['user_id']; ?>, <?php echo $selected_project_id; ?>, <?php echo $upt['remaining_times']; ?>, <?php echo $upt['is_visible']; ?>)" class="text-blue-600 hover:text-blue-900">
-                                        <i class="fas fa-edit"></i>
+                                        <i class="fa fa-edit"></i>
                                     </button>
                                 </td>
                             </tr>
@@ -557,7 +557,7 @@ $lottery_records = $records_stmt->fetchAll();
                             <?php if (empty($lottery_records)): ?>
                             <tr>
                                 <td colspan="6" class="px-6 py-8 text-center text-gray-500">
-                                    <i class="fas fa-inbox text-4xl mb-2"></i>
+                                    <i class="fa fa-inbox text-4xl mb-2"></i>
                                     <div>暂无抽奖记录</div>
                                 </td>
                             </tr>
@@ -571,11 +571,11 @@ $lottery_records = $records_stmt->fetchAll();
                                     <td class="px-6 py-4">
                                         <?php if ($record['prize_id']): ?>
                                             <span class="px-2 py-1 text-xs rounded-full bg-green-100 text-green-800">
-                                                <i class="fas fa-gift mr-1"></i><?php echo htmlspecialchars($record['prize_name']); ?>
+                                                <i class="fa fa-gift mr-1"></i><?php echo htmlspecialchars($record['prize_name']); ?>
                                             </span>
                                         <?php else: ?>
                                             <span class="px-2 py-1 text-xs rounded-full bg-gray-100 text-gray-600">
-                                                <i class="fas fa-times-circle mr-1"></i>未中奖
+                                                <i class="fa fa-times-circle mr-1"></i>未中奖
                                             </span>
                                         <?php endif; ?>
                                     </td>
@@ -593,7 +593,7 @@ $lottery_records = $records_stmt->fetchAll();
                     <nav class="flex space-x-2">
                         <?php if ($page > 1): ?>
                             <a href="?page=<?php echo $page - 1; ?>#records" class="px-3 py-2 text-sm bg-white border border-gray-300 rounded-lg hover:bg-gray-50">
-                                <i class="fas fa-chevron-left"></i>
+                                <i class="fa fa-chevron-left"></i>
                             </a>
                         <?php endif; ?>
                         
@@ -605,7 +605,7 @@ $lottery_records = $records_stmt->fetchAll();
                         
                         <?php if ($page < $total_pages): ?>
                             <a href="?page=<?php echo $page + 1; ?>#records" class="px-3 py-2 text-sm bg-white border border-gray-300 rounded-lg hover:bg-gray-50">
-                                <i class="fas fa-chevron-right"></i>
+                                <i class="fa fa-chevron-right"></i>
                             </a>
                         <?php endif; ?>
                     </nav>

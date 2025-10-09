@@ -52,21 +52,21 @@ if ($_POST) {
 <body class="bg-gradient-to-br from-purple-400 via-pink-500 to-red-500 min-h-screen flex items-center justify-center">
     <div class="bg-white rounded-lg shadow-2xl p-8 w-full max-w-md">
         <div class="text-center mb-8">
-            <i class="fas fa-user-plus text-5xl text-blue-500 mb-4"></i>
+            <i class="fa fa-user-plus text-5xl text-blue-500 mb-4"></i>
             <h1 class="text-3xl font-bold text-gray-800"><?php echo SITE_NAME; ?></h1>
             <p class="text-gray-600 mt-2">欢迎参与抽奖活动</p>
         </div>
 
         <?php if ($error): ?>
             <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-6">
-                <i class="fas fa-exclamation-circle mr-2"></i>
+                <i class="fa fa-exclamation-circle mr-2"></i>
                 <?php echo htmlspecialchars($error); ?>
             </div>
         <?php endif; ?>
 
         <?php if ($success): ?>
             <div class="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-6">
-                <i class="fas fa-check-circle mr-2"></i>
+                <i class="fa fa-check-circle mr-2"></i>
                 <?php echo htmlspecialchars($success); ?>
             </div>
         <?php endif; ?>
@@ -74,7 +74,7 @@ if ($_POST) {
         <form method="POST" class="space-y-6">
             <div>
                 <label for="name" class="block text-sm font-medium text-gray-700 mb-2">
-                    <i class="fas fa-user mr-2"></i>请输入您的姓名
+                    <i class="fa fa-user mr-2"></i>请输入您的姓名
                 </label>
                 <input type="text" 
                        id="name" 
@@ -88,7 +88,7 @@ if ($_POST) {
 
             <div class="bg-gray-50 p-4 rounded-lg">
                 <div class="text-sm text-gray-600">
-                    <i class="fas fa-info-circle mr-2"></i>
+                    <i class="fa fa-info-circle mr-2"></i>
                     <strong>注册说明：</strong>
                 </div>
                 <ul class="text-sm text-gray-600 mt-2 space-y-1">
@@ -105,7 +105,7 @@ if ($_POST) {
                 </div>
                 <button type="submit" 
                         class="w-full bg-gradient-to-r from-blue-500 to-purple-600 text-white py-3 px-6 rounded-lg font-medium hover:from-blue-600 hover:to-purple-700 transition-all transform hover:scale-105 shadow-lg">
-                    <i class="fas fa-sign-in-alt mr-2"></i>
+                    <i class="fa fa-sign-in-alt mr-2"></i>
                     立即注册
                 </button>
             </div>
@@ -113,7 +113,7 @@ if ($_POST) {
 
         <div class="mt-8 text-center">
             <a href="admin.php" class="text-blue-500 hover:text-blue-600 text-sm">
-                <i class="fas fa-cog mr-1"></i>
+                <i class="fa fa-cog mr-1"></i>
                 管理员入口
             </a>
         </div>

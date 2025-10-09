@@ -94,15 +94,15 @@ $win_rate = $stats['total_draws'] > 0 ? round(($stats['total_wins'] / $stats['to
         <div class="bg-white rounded-lg shadow-lg p-6 mb-8">
             <div class="flex justify-between items-center">
                 <h1 class="text-3xl font-bold text-gray-800">
-                    <i class="fas fa-history text-green-500 mr-2"></i>
+                    <i class="fa fa-history text-green-500 mr-2"></i>
                     抽奖历史
                 </h1>
                 <div class="flex space-x-4">
                     <a href="index.php" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg transition">
-                        <i class="fas fa-home mr-2"></i>返回首页
+                        <i class="fa fa-home mr-2"></i>返回首页
                     </a>
                     <a href="admin.php" class="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded-lg transition">
-                        <i class="fas fa-cog mr-2"></i>管理后台
+                        <i class="fa fa-cog mr-2"></i>管理后台
                     </a>
                 </div>
             </div>
@@ -114,7 +114,7 @@ $win_rate = $stats['total_draws'] > 0 ? round(($stats['total_wins'] / $stats['to
             <div class="bg-white rounded-lg shadow-lg p-6">
                 <div class="flex items-center">
                     <div class="bg-blue-100 p-3 rounded-full">
-                        <i class="fas fa-user text-blue-600 text-xl"></i>
+                        <i class="fa fa-user text-blue-600 text-xl"></i>
                     </div>
                     <div class="ml-4">
                         <h3 class="text-lg font-semibold text-gray-800"><?php echo htmlspecialchars($user['name']); ?></h3>
@@ -127,7 +127,7 @@ $win_rate = $stats['total_draws'] > 0 ? round(($stats['total_wins'] / $stats['to
             <div class="bg-white rounded-lg shadow-lg p-6">
                 <div class="flex items-center">
                     <div class="bg-purple-100 p-3 rounded-full">
-                        <i class="fas fa-dice text-purple-600 text-xl"></i>
+                        <i class="fa fa-dice text-purple-600 text-xl"></i>
                     </div>
                     <div class="ml-4">
                         <h3 class="text-2xl font-bold text-gray-800"><?php echo $stats['total_draws']; ?></h3>
@@ -140,7 +140,7 @@ $win_rate = $stats['total_draws'] > 0 ? round(($stats['total_wins'] / $stats['to
             <div class="bg-white rounded-lg shadow-lg p-6">
                 <div class="flex items-center">
                     <div class="bg-green-100 p-3 rounded-full">
-                        <i class="fas fa-trophy text-green-600 text-xl"></i>
+                        <i class="fa fa-trophy text-green-600 text-xl"></i>
                     </div>
                     <div class="ml-4">
                         <h3 class="text-2xl font-bold text-gray-800"><?php echo $stats['total_wins']; ?></h3>
@@ -153,7 +153,7 @@ $win_rate = $stats['total_draws'] > 0 ? round(($stats['total_wins'] / $stats['to
             <div class="bg-white rounded-lg shadow-lg p-6">
                 <div class="flex items-center">
                     <div class="bg-yellow-100 p-3 rounded-full">
-                        <i class="fas fa-percentage text-yellow-600 text-xl"></i>
+                        <i class="fa fa-percentage text-yellow-600 text-xl"></i>
                     </div>
                     <div class="ml-4">
                         <h3 class="text-2xl font-bold text-gray-800"><?php echo $win_rate; ?>%</h3>
@@ -166,7 +166,7 @@ $win_rate = $stats['total_draws'] > 0 ? round(($stats['total_wins'] / $stats['to
         <!-- 筛选器 -->
         <div class="bg-white rounded-lg shadow-lg p-6 mb-8">
             <h2 class="text-xl font-bold text-gray-800 mb-4">
-                <i class="fas fa-filter text-blue-500 mr-2"></i>筛选条件
+                <i class="fa fa-filter text-blue-500 mr-2"></i>筛选条件
             </h2>
             <form method="GET" class="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
@@ -190,7 +190,7 @@ $win_rate = $stats['total_draws'] > 0 ? round(($stats['total_wins'] / $stats['to
                 </div>
                 <div class="flex items-end">
                     <button type="submit" class="w-full bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg transition">
-                        <i class="fas fa-search mr-2"></i>筛选
+                        <i class="fa fa-search mr-2"></i>筛选
                     </button>
                 </div>
             </form>
@@ -201,7 +201,7 @@ $win_rate = $stats['total_draws'] > 0 ? round(($stats['total_wins'] / $stats['to
             <div class="p-6 border-b border-gray-200">
                 <div class="flex justify-between items-center">
                     <h2 class="text-xl font-bold text-gray-800">
-                        <i class="fas fa-list text-purple-500 mr-2"></i>抽奖记录
+                        <i class="fa fa-list text-purple-500 mr-2"></i>抽奖记录
                     </h2>
                     <div class="text-sm text-gray-500">
                         共 <?php echo $total_records; ?> 条记录，第 <?php echo $page; ?>/<?php echo $total_pages; ?> 页
@@ -211,11 +211,11 @@ $win_rate = $stats['total_draws'] > 0 ? round(($stats['total_wins'] / $stats['to
 
             <?php if (empty($records)): ?>
                 <div class="p-12 text-center">
-                    <i class="fas fa-inbox text-gray-400 text-6xl mb-4"></i>
+                    <i class="fa fa-inbox text-gray-400 text-6xl mb-4"></i>
                     <h3 class="text-xl font-semibold text-gray-600 mb-2">暂无抽奖记录</h3>
                     <p class="text-gray-500">您还没有参与过抽奖活动</p>
                     <a href="index.php" class="inline-block mt-4 bg-blue-500 hover:bg-blue-600 text-white px-6 py-2 rounded-lg transition">
-                        <i class="fas fa-dice mr-2"></i>立即抽奖
+                        <i class="fa fa-dice mr-2"></i>立即抽奖
                     </a>
                 </div>
             <?php else: ?>
@@ -248,12 +248,12 @@ $win_rate = $stats['total_draws'] > 0 ? round(($stats['total_wins'] / $stats['to
                                 <td class="px-6 py-4">
                                     <?php if ($record['prize_name']): ?>
                                         <div class="flex items-center">
-                                            <i class="fas fa-trophy text-yellow-500 mr-2"></i>
+                                            <i class="fa fa-trophy text-yellow-500 mr-2"></i>
                                             <span class="text-green-600 font-medium"><?php echo htmlspecialchars($record['prize_name']); ?></span>
                                         </div>
                                     <?php else: ?>
                                         <div class="flex items-center">
-                                            <i class="fas fa-times-circle text-gray-400 mr-2"></i>
+                                            <i class="fa fa-times-circle text-gray-400 mr-2"></i>
                                             <span class="text-gray-500">未中奖</span>
                                         </div>
                                     <?php endif; ?>
@@ -278,7 +278,7 @@ $win_rate = $stats['total_draws'] > 0 ? round(($stats['total_wins'] / $stats['to
                             <?php if ($page > 1): ?>
                                 <a href="?page=<?php echo $page - 1; ?>&project=<?php echo urlencode($project_filter); ?>&result=<?php echo urlencode($result_filter); ?>" 
                                    class="px-3 py-2 text-sm font-medium text-gray-500 bg-white border border-gray-300 rounded-lg hover:bg-gray-50">
-                                    <i class="fas fa-chevron-left mr-1"></i>上一页
+                                    <i class="fa fa-chevron-left mr-1"></i>上一页
                                 </a>
                             <?php endif; ?>
 
@@ -297,7 +297,7 @@ $win_rate = $stats['total_draws'] > 0 ? round(($stats['total_wins'] / $stats['to
                             <?php if ($page < $total_pages): ?>
                                 <a href="?page=<?php echo $page + 1; ?>&project=<?php echo urlencode($project_filter); ?>&result=<?php echo urlencode($result_filter); ?>" 
                                    class="px-3 py-2 text-sm font-medium text-gray-500 bg-white border border-gray-300 rounded-lg hover:bg-gray-50">
-                                    下一页<i class="fas fa-chevron-right ml-1"></i>
+                                    下一页<i class="fa fa-chevron-right ml-1"></i>
                                 </a>
                             <?php endif; ?>
                         </div>

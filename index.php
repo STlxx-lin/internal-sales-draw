@@ -132,15 +132,15 @@ $recent_records = $stmt->fetchAll();
         <div class="bg-white rounded-lg shadow-lg p-6 mb-8">
             <div class="flex justify-between items-center">
                 <h1 class="text-3xl font-bold text-gray-800">
-                    <i class="fas fa-star text-pink-500 mr-2"></i>
+                    <i class="fa fa-star text-pink-500 mr-2"></i>
                     <?php echo SITE_NAME; ?>
                 </h1>
                 <div class="flex space-x-4">
                     <a href="admin.php" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg transition">
-                        <i class="fas fa-cog mr-2"></i>管理后台
+                        <i class="fa fa-cog mr-2"></i>管理后台
                     </a>
                     <a href="history.php" class="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg transition">
-                        <i class="fas fa-history mr-2"></i>抽奖历史
+                        <i class="fa fa-history mr-2"></i>抽奖历史
                     </a>
                 </div>
             </div>
@@ -150,7 +150,7 @@ $recent_records = $stmt->fetchAll();
             <!-- 用户信息卡片 -->
             <div class="bg-white rounded-lg shadow-lg p-6">
                 <h2 class="text-xl font-bold text-gray-800 mb-4">
-                    <i class="fas fa-user text-blue-500 mr-2"></i>个人信息
+                    <i class="fa fa-user text-blue-500 mr-2"></i>个人信息
                 </h2>
                 <div class="space-y-3">
                     <div class="flex items-center">
@@ -190,7 +190,7 @@ $recent_records = $stmt->fetchAll();
             <!-- 抽奖区域 -->
             <div class="bg-white rounded-lg shadow-lg p-6">
                 <h2 class="text-xl font-bold text-gray-800 mb-4">
-                    <i class="fas fa-dice text-green-500 mr-2"></i>
+                    <i class="fa fa-dice text-green-500 mr-2"></i>
                     <?php echo htmlspecialchars($current_project['name'] ?? '请选择项目'); ?>
                 </h2>
                 
@@ -205,7 +205,7 @@ $recent_records = $stmt->fetchAll();
                             <button id="lottery-btn" 
                                     class="w-32 h-32 bg-gradient-to-r from-yellow-400 to-orange-500 rounded-full text-white text-xl font-bold shadow-lg hover:shadow-xl transition-all transform hover:scale-105 <?php echo $remaining_times <= 0 ? 'opacity-50 cursor-not-allowed' : ''; ?>"
                                     <?php echo $remaining_times <= 0 ? 'disabled' : ''; ?>>
-                                <i class="fas fa-gift text-3xl mb-2"></i><br>
+                                <i class="fa fa-gift text-3xl mb-2"></i><br>
                                 开始抽奖
                             </button>
                         </div>
@@ -218,7 +218,7 @@ $recent_records = $stmt->fetchAll();
                     </div>
                 <?php else: ?>
                     <div class="text-center text-gray-500 py-8">
-                        <i class="fas fa-exclamation-circle text-4xl mb-4"></i>
+                        <i class="fa fa-exclamation-circle text-4xl mb-4"></i>
                         <p>您暂时无法参与此项目的抽奖</p>
                     </div>
                 <?php endif; ?>
@@ -227,7 +227,7 @@ $recent_records = $stmt->fetchAll();
             <!-- 奖品展示 -->
             <div class="bg-white rounded-lg shadow-lg p-6">
                 <h2 class="text-xl font-bold text-gray-800 mb-4">
-                    <i class="fas fa-trophy text-yellow-500 mr-2"></i>奖品列表
+                    <i class="fa fa-trophy text-yellow-500 mr-2"></i>奖品列表
                 </h2>
                 <div class="space-y-3">
                     <?php foreach ($prizes as $prize): ?>
@@ -251,7 +251,7 @@ $recent_records = $stmt->fetchAll();
         <?php if (!empty($recent_records)): ?>
         <div class="bg-white rounded-lg shadow-lg p-6 mt-8">
             <h2 class="text-xl font-bold text-gray-800 mb-4">
-                <i class="fas fa-list text-purple-500 mr-2"></i>最近抽奖记录
+                <i class="fa fa-list text-purple-500 mr-2"></i>最近抽奖记录
             </h2>
             <div class="overflow-x-auto">
                 <table class="w-full text-sm">
@@ -288,7 +288,7 @@ $recent_records = $stmt->fetchAll();
         if (this.disabled) return;
         
         this.disabled = true;
-        this.innerHTML = '<i class="fas fa-spinner fa-spin text-3xl mb-2"></i><br>抽奖中...';
+        this.innerHTML = '<i class="fa fa-spinner fa-spin text-3xl mb-2"></i><br>抽奖中...';
         this.classList.add('lottery-wheel');
         
         // 发送抽奖请求
@@ -313,7 +313,7 @@ $recent_records = $stmt->fetchAll();
                     
                     if (data.prize) {
                         resultContent.innerHTML = `
-                            <i class="fas fa-trophy text-4xl mb-4"></i>
+                            <i class="fa fa-trophy text-4xl mb-4"></i>
                             <h3 class="text-2xl font-bold mb-2">恭喜中奖！</h3>
                             <p class="text-lg">${data.prize.name}</p>
                             ${data.remaining_times > 0 ? 
@@ -323,7 +323,7 @@ $recent_records = $stmt->fetchAll();
                         resultContent.className = 'p-6 bg-gradient-to-r from-green-400 to-blue-500 rounded-lg text-white text-center';
                     } else {
                         resultContent.innerHTML = `
-                            <i class="fas fa-heart text-4xl mb-4"></i>
+                            <i class="fa fa-heart text-4xl mb-4"></i>
                             <h3 class="text-2xl font-bold mb-2">谢谢参与！</h3>
                             <p class="text-lg">很遗憾，这次没有中奖</p>
                             ${data.remaining_times > 0 ? 
@@ -338,7 +338,7 @@ $recent_records = $stmt->fetchAll();
                 } else {
                     alert(data.message || '抽奖失败，请重试');
                     this.disabled = false;
-                    this.innerHTML = '<i class="fas fa-gift text-3xl mb-2"></i><br>开始抽奖';
+                    this.innerHTML = '<i class="fa fa-gift text-3xl mb-2"></i><br>开始抽奖';
                 }
             }, 3000);
         })
@@ -346,7 +346,7 @@ $recent_records = $stmt->fetchAll();
             console.error('Error:', error);
             alert('网络错误，请重试');
             this.disabled = false;
-            this.innerHTML = '<i class="fas fa-gift text-3xl mb-2"></i><br>开始抽奖';
+            this.innerHTML = '<i class="fa fa-gift text-3xl mb-2"></i><br>开始抽奖';
             this.classList.remove('lottery-wheel');
         });
     });
