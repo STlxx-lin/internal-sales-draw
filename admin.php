@@ -11,11 +11,33 @@ if (!isset($_SESSION['admin_logged_in']) || $_SESSION['admin_logged_in'] !== tru
     if ($_POST && isset($_POST['password'])) {
         if ($_POST['password'] === ADMIN_PASSWORD) {
             $_SESSION['admin_logged_in'] = true;
+            
+            // 如果是AJAX请求，返回JSON响应而不是重定向
+            if (isset($_POST['action']) || (isset($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) == 'xmlhttprequest')) {
+                header('Content-Type: application/json');
+                echo json_encode(['success' => true, 'message' => '登录成功']);
+                exit;
+            }
+            
             header('Location: admin.php');
             exit;
         } else {
             $login_error = '密码错误';
+            
+            // 如果是AJAX请求，返回JSON错误响应
+            if (isset($_POST['action']) || (isset($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) == 'xmlhttprequest')) {
+                header('Content-Type: application/json');
+                echo json_encode(['success' => false, 'message' => '密码错误']);
+                exit;
+            }
         }
+    }
+    
+    // 如果是AJAX请求，返回JSON响应
+    if (isset($_POST['action'])) {
+        header('Content-Type: application/json');
+        echo json_encode(['success' => false, 'message' => '请先登录']);
+        exit;
     }
     
     // 显示登录页面
@@ -63,8 +85,8 @@ if (!isset($_SESSION['admin_logged_in']) || $_SESSION['admin_logged_in'] !== tru
     }
 }
 
-// 处理各种操作
-$action = $_GET['action'] ?? '';
+// 处理各种操作 - 支持从POST和GET中获取action参数
+$action = $_POST['action'] ?? $_GET['action'] ?? '';
 
 // 处理退出登录
 if ($action === 'logout') {
@@ -218,6 +240,102 @@ if ($_POST) {
                 
                 $message = '用户抽奖次数设置成功';
                 break;
+                
+            case 'update_probabilities':
+                // 处理概率批量更新 - 独立的异常处理确保始终返回JSON
+                try {
+                    $project_id = (int)$_POST['project_id'];
+                    $probabilities_json = $_POST['probabilities'] ?? '';
+                    
+                    if (empty($probabilities_json)) {
+                        throw new Exception('概率数据不能为空');
+                    }
+                    
+                    $probabilities = json_decode($probabilities_json, true);
+                    if (!is_array($probabilities)) {
+                        throw new Exception('概率数据格式错误');
+                    }
+                    
+                    // 开始事务
+                    $pdo->beginTransaction();
+                    
+                    try {
+                        foreach ($probabilities as $prize_id => $probability) {
+                            $prize_id = (int)$prize_id;
+                            $probability = (float)$probability;
+                            
+                            if ($probability < 0 || $probability > 100) {
+                                throw new Exception("奖品ID {$prize_id} 的概率必须在0-100之间");
+                            }
+                            
+                            // 验证奖品是否属于指定项目
+                            $stmt = $pdo->prepare("SELECT id FROM prizes WHERE id = ? AND project_id = ?");
+                            $stmt->execute([$prize_id, $project_id]);
+                            if (!$stmt->fetch()) {
+                                throw new Exception("奖品ID {$prize_id} 不存在或不属于当前项目");
+                            }
+                            
+                            // 更新概率
+                            $stmt = $pdo->prepare("UPDATE prizes SET probability = ? WHERE id = ?");
+                            $stmt->execute([$probability, $prize_id]);
+                        }
+                        
+                        $pdo->commit();
+                        
+                        // 返回成功的JSON响应
+                        header('Content-Type: application/json');
+                        echo json_encode(['success' => true, 'message' => '概率更新成功']);
+                        exit;
+                        
+                    } catch (Exception $e) {
+                        $pdo->rollBack();
+                        throw $e;
+                    }
+                    
+                } catch (Exception $e) {
+                    // 返回错误的JSON响应
+                    header('Content-Type: application/json');
+                    echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+                    exit;
+                } catch (PDOException $e) {
+                    // 返回数据库错误的JSON响应
+                    header('Content-Type: application/json');
+                    echo json_encode(['success' => false, 'message' => '数据库操作失败：' . $e->getMessage()]);
+                    exit;
+                }
+                break;
+                
+            case 'get_prizes_data':
+                // 获取奖品数据的AJAX处理
+                try {
+                    $project_id = (int)$_POST['project_id'];
+                    
+                    // 获取奖品数据
+                    $stmt = $pdo->prepare("SELECT id, name, probability FROM prizes WHERE project_id = ? ORDER BY sort_order, id");
+                    $stmt->execute([$project_id]);
+                    $prizes = $stmt->fetchAll();
+                    
+                    // 计算总概率
+                    $total_probability = 0;
+                    foreach ($prizes as $prize) {
+                        $total_probability += $prize['probability'];
+                    }
+                    
+                    // 返回JSON响应
+                    header('Content-Type: application/json');
+                    echo json_encode([
+                        'success' => true, 
+                        'prizes' => $prizes,
+                        'total_probability' => number_format($total_probability, 2)
+                    ]);
+                    exit;
+                    
+                } catch (Exception $e) {
+                    header('Content-Type: application/json');
+                    echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+                    exit;
+                }
+                break;
         }
     } catch (Exception $e) {
         $error = $e->getMessage();
@@ -233,10 +351,16 @@ $users = $pdo->query("SELECT * FROM users ORDER BY id DESC")->fetchAll();
 // 获取奖品（如果选择了项目）
 $selected_project_id = $_GET['project_id'] ?? ($projects[0]['id'] ?? 0);
 $prizes = [];
+$total_probability = 0; // 初始化概率合计变量
 if ($selected_project_id) {
     $stmt = $pdo->prepare("SELECT * FROM prizes WHERE project_id = ? ORDER BY sort_order, id");
     $stmt->execute([$selected_project_id]);
     $prizes = $stmt->fetchAll();
+    
+    // 计算所有奖品的概率合计
+    foreach ($prizes as $prize) {
+        $total_probability += $prize['probability'];
+    }
 }
 
 // 获取用户项目次数
@@ -400,9 +524,14 @@ $lottery_records = $records_stmt->fetchAll();
                             <?php endforeach; ?>
                         </select>
                     </div>
-                    <button onclick="showModal('add-prize-modal')" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg transition">
-                        <i class="fa fa-plus mr-2"></i>添加奖品
-                    </button>
+                    <div class="flex space-x-3">
+                        <button onclick="showModal('add-prize-modal')" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg transition">
+                            <i class="fa fa-plus mr-2"></i>添加奖品
+                        </button>
+                        <button onclick="showModal('probability-adjust-modal')" class="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg transition">
+                            <i class="fa fa-sliders mr-2"></i>快速调整概率
+                        </button>
+                    </div>
                 </div>
                 
                 <div class="overflow-x-auto">
@@ -418,11 +547,11 @@ $lottery_records = $records_stmt->fetchAll();
                         </thead>
                         <tbody>
                             <?php foreach ($prizes as $prize): ?>
-                            <tr class="bg-white border-b">
+                            <tr class="bg-white border-b" data-prize-id="<?php echo $prize['id']; ?>">
                                 <td class="px-6 py-4"><?php echo $prize['id']; ?></td>
                                 <td class="px-6 py-4 font-medium"><?php echo htmlspecialchars($prize['name']); ?></td>
                                 <td class="px-6 py-4"><?php echo $prize['remaining_quantity'] >= 999999 ? '无限' : $prize['remaining_quantity']; ?></td>
-                                <td class="px-6 py-4"><?php echo $prize['probability']; ?>%</td>
+                                <td class="px-6 py-4 probability-cell"><?php echo $prize['probability']; ?>%</td>
                                 <td class="px-6 py-4">
                                     <button onclick="editPrize(<?php echo $prize['id']; ?>, '<?php echo htmlspecialchars($prize['name'], ENT_QUOTES); ?>', <?php echo $prize['remaining_quantity']; ?>, <?php echo $prize['probability']; ?>)" class="text-blue-600 hover:text-blue-900 mr-3">
                                         <i class="fa fa-edit"></i>
@@ -433,6 +562,14 @@ $lottery_records = $records_stmt->fetchAll();
                                 </td>
                             </tr>
                             <?php endforeach; ?>
+                            <!-- 合计概率显示行 -->
+                            <?php if (!empty($prizes)): ?>
+                            <tr class="bg-red-50 border-b-2 border-red-200">
+                                <td class="px-6 py-4 font-bold text-red-700" colspan="3">合计概率</td>
+                                <td class="px-6 py-4 font-bold text-red-700 text-lg total-probability-cell"><?php echo number_format($total_probability, 2); ?>%</td>
+                                <td class="px-6 py-4"></td>
+                            </tr>
+                            <?php endif; ?>
                         </tbody>
                     </table>
                 </div>
@@ -857,6 +994,85 @@ $lottery_records = $records_stmt->fetchAll();
         </div>
     </div>
 
+    <!-- 概率调整模态框 -->
+    <div id="probability-adjust-modal" class="modal fixed inset-0 bg-gray-600 bg-opacity-50 hidden flex items-center justify-center">
+        <div class="bg-white rounded-lg p-6 w-full max-w-2xl">
+            <h3 class="text-lg font-bold mb-4">快速调整概率</h3>
+            <div class="mb-4">
+                <p class="text-sm text-gray-600 mb-2">当前项目：<span class="font-medium"><?php echo htmlspecialchars($projects[array_search($selected_project_id, array_column($projects, 'id'))]['name'] ?? '未选择'); ?></span></p>
+                <p class="text-sm text-gray-600 mb-4">当前总概率：<span id="current-total-probability" class="font-medium text-red-600"><?php echo number_format($total_probability, 2); ?>%</span></p>
+            </div>
+            
+            <div class="max-h-96 overflow-y-auto mb-4">
+                <table class="w-full text-sm">
+                    <thead class="bg-gray-50 sticky top-0">
+                        <tr>
+                            <th class="px-4 py-2 text-left">奖品名称</th>
+                            <th class="px-4 py-2 text-left">当前概率</th>
+                            <th class="px-4 py-2 text-left">新概率</th>
+                            <th class="px-4 py-2 text-left">滑动调整</th>
+                        </tr>
+                    </thead>
+                    <tbody id="probability-adjust-table">
+                        <?php foreach ($prizes as $prize): ?>
+                        <tr class="border-b">
+                            <td class="px-4 py-2 font-medium"><?php echo htmlspecialchars($prize['name']); ?></td>
+                            <td class="px-4 py-2"><?php echo $prize['probability']; ?>%</td>
+                            <td class="px-4 py-2">
+                                <input type="number" 
+                                       class="probability-input w-20 border border-gray-300 rounded px-2 py-1 text-sm" 
+                                       data-prize-id="<?php echo $prize['id']; ?>"
+                                       value="<?php echo $prize['probability']; ?>" 
+                                       min="0" 
+                                       max="100" 
+                                       step="0.01"
+                                       onchange="updateProbabilitySlider(this)">
+                                <span class="text-xs text-gray-500">%</span>
+                            </td>
+                            <td class="px-4 py-2">
+                                <input type="range" 
+                                       class="probability-slider w-24" 
+                                       data-prize-id="<?php echo $prize['id']; ?>"
+                                       value="<?php echo $prize['probability']; ?>" 
+                                       min="0" 
+                                       max="100" 
+                                       step="0.01"
+                                       oninput="updateProbabilityInput(this)">
+                            </td>
+                        </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+            
+            <div class="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded">
+                <p class="text-sm text-yellow-800">
+                    <i class="fa fa-exclamation-triangle mr-1"></i>
+                    提示：调整后的总概率为 <span id="new-total-probability" class="font-bold">0.00%</span>
+                </p>
+            </div>
+            
+            <div class="flex justify-between items-center">
+                <div class="flex space-x-2">
+                    <button type="button" onclick="resetProbabilities()" class="px-3 py-2 text-sm bg-gray-500 text-white rounded hover:bg-gray-600">
+                        <i class="fa fa-refresh mr-1"></i>重置
+                    </button>
+                    <button type="button" onclick="averageProbabilities()" class="px-3 py-2 text-sm bg-orange-500 text-white rounded hover:bg-orange-600">
+                        <i class="fa fa-balance-scale mr-1"></i>平均分配
+                    </button>
+                </div>
+                <div class="flex space-x-3">
+                    <button type="button" onclick="hideModal('probability-adjust-modal')" class="px-4 py-2 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50">
+                        取消
+                    </button>
+                    <button type="button" onclick="saveProbabilities()" class="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600">
+                        <i class="fa fa-save mr-1"></i>保存调整
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script>
     // 标签页切换
     function showTab(tabName) {
@@ -1065,6 +1281,175 @@ $lottery_records = $records_stmt->fetchAll();
         if (hash && ['projects', 'prizes', 'users', 'user-times', 'records'].includes(hash)) {
             showTab(hash);
         }
+    });
+
+    // 概率调整相关函数
+    // 更新滑动条值（当输入框改变时）
+    function updateProbabilitySlider(input) {
+        const prizeId = input.getAttribute('data-prize-id');
+        const slider = document.querySelector(`.probability-slider[data-prize-id="${prizeId}"]`);
+        slider.value = input.value;
+        updateTotalProbability();
+    }
+
+    // 更新输入框值（当滑动条改变时）
+    function updateProbabilityInput(slider) {
+        const prizeId = slider.getAttribute('data-prize-id');
+        const input = document.querySelector(`.probability-input[data-prize-id="${prizeId}"]`);
+        input.value = slider.value;
+        updateTotalProbability();
+    }
+
+    // 计算并更新总概率显示
+    function updateTotalProbability() {
+        const inputs = document.querySelectorAll('.probability-input');
+        let total = 0;
+        inputs.forEach(input => {
+            total += parseFloat(input.value) || 0;
+        });
+        document.getElementById('new-total-probability').textContent = total.toFixed(2) + '%';
+        
+        // 根据总概率改变提示颜色
+        const tipElement = document.getElementById('new-total-probability').parentElement.parentElement;
+        tipElement.className = 'mb-4 p-3 border rounded';
+        if (total > 100) {
+            tipElement.classList.add('bg-red-50', 'border-red-200');
+            tipElement.querySelector('p').className = 'text-sm text-red-800';
+        } else if (total < 100) {
+            tipElement.classList.add('bg-yellow-50', 'border-yellow-200');
+            tipElement.querySelector('p').className = 'text-sm text-yellow-800';
+        } else {
+            tipElement.classList.add('bg-green-50', 'border-green-200');
+            tipElement.querySelector('p').className = 'text-sm text-green-800';
+        }
+    }
+
+    // 重置所有概率到原始值
+    function resetProbabilities() {
+        const inputs = document.querySelectorAll('.probability-input');
+        const sliders = document.querySelectorAll('.probability-slider');
+        
+        inputs.forEach((input, index) => {
+            const originalValue = input.defaultValue;
+            input.value = originalValue;
+            sliders[index].value = originalValue;
+        });
+        updateTotalProbability();
+    }
+
+    // 平均分配概率
+    function averageProbabilities() {
+        const inputs = document.querySelectorAll('.probability-input');
+        const sliders = document.querySelectorAll('.probability-slider');
+        const averageValue = (100 / inputs.length).toFixed(2);
+        
+        inputs.forEach((input, index) => {
+            input.value = averageValue;
+            sliders[index].value = averageValue;
+        });
+        updateTotalProbability();
+    }
+
+    // 保存概率调整
+    function saveProbabilities() {
+        const inputs = document.querySelectorAll('.probability-input');
+        const probabilities = {};
+        
+        inputs.forEach(input => {
+            const prizeId = input.getAttribute('data-prize-id');
+            probabilities[prizeId] = parseFloat(input.value) || 0;
+        });
+
+        // 发送AJAX请求保存概率
+        const formData = new FormData();
+        formData.append('action', 'update_probabilities');
+        formData.append('project_id', '<?php echo $selected_project_id; ?>');
+        formData.append('probabilities', JSON.stringify(probabilities));
+
+        fetch(window.location.href, {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                alert('概率调整成功！');
+                hideModal('probability-adjust-modal');
+                
+                // 局部更新概率显示，而不是刷新整个页面
+                updateProbabilityDisplay();
+            } else {
+                alert('保存失败：' + (data.message || '未知错误'));
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('保存失败，请重试');
+        });
+    }
+
+    // 局部更新概率显示函数
+    function updateProbabilityDisplay() {
+        // 重新获取当前项目的奖品数据并更新显示
+        const projectId = '<?php echo $selected_project_id; ?>';
+        
+        // 发送AJAX请求获取最新的奖品数据
+        const formData = new FormData();
+        formData.append('action', 'get_prizes_data');
+        formData.append('project_id', projectId);
+        
+        fetch(window.location.href, {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                // 更新奖品表格中的概率显示
+                data.prizes.forEach(prize => {
+                    const probabilityCell = document.querySelector(`tr[data-prize-id="${prize.id}"] .probability-cell`);
+                    if (probabilityCell) {
+                        probabilityCell.textContent = prize.probability + '%';
+                    }
+                });
+                
+                // 更新总概率显示
+                const totalProbabilityCell = document.querySelector('.total-probability-cell');
+                if (totalProbabilityCell) {
+                    totalProbabilityCell.textContent = data.total_probability + '%';
+                }
+                
+                // 更新概率调整弹窗中的当前概率显示
+                const currentTotalSpan = document.getElementById('current-total-probability');
+                if (currentTotalSpan) {
+                    currentTotalSpan.textContent = data.total_probability + '%';
+                }
+            }
+        })
+        .catch(error => {
+            console.error('更新概率显示失败:', error);
+            // 如果局部更新失败，则刷新页面
+            location.reload();
+        });
+    }
+
+    // 初始化概率调整弹窗
+    document.addEventListener('DOMContentLoaded', function() {
+        // 为所有概率输入框和滑动条添加事件监听器
+        document.querySelectorAll('.probability-input').forEach(input => {
+            input.addEventListener('input', function() {
+                updateProbabilitySlider(this);
+            });
+        });
+        
+        document.querySelectorAll('.probability-slider').forEach(slider => {
+            slider.addEventListener('input', function() {
+                updateProbabilityInput(this);
+            });
+        });
+        
+        // 初始化总概率显示
+        updateTotalProbability();
     });
     </script>
 </body>
