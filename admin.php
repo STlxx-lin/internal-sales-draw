@@ -620,7 +620,7 @@ $lottery_records = $records_stmt->fetchAll();
     <div id="add-project-modal" class="modal fixed inset-0 bg-gray-600 bg-opacity-50 hidden flex items-center justify-center">
         <div class="bg-white rounded-lg p-6 w-full max-w-md">
             <h3 class="text-lg font-bold mb-4">添加项目</h3>
-            <form method="POST" action="?action=add_project">
+            <form method="POST" action="?action=add_project#projects">
                 <div class="mb-4">
                     <label class="block text-sm font-medium text-gray-700 mb-2">项目名称</label>
                     <input type="text" name="name" class="w-full border border-gray-300 rounded-lg px-3 py-2" required>
@@ -641,7 +641,7 @@ $lottery_records = $records_stmt->fetchAll();
     <div id="edit-project-modal" class="modal fixed inset-0 bg-gray-600 bg-opacity-50 hidden flex items-center justify-center">
         <div class="bg-white rounded-lg p-6 w-full max-w-md">
             <h3 class="text-lg font-bold mb-4">编辑项目</h3>
-            <form method="POST" action="?action=edit_project">
+            <form method="POST" action="?action=edit_project#projects">
                 <input type="hidden" name="id" id="edit-project-id">
                 <div class="mb-4">
                     <label class="block text-sm font-medium text-gray-700 mb-2">项目名称</label>
@@ -663,7 +663,7 @@ $lottery_records = $records_stmt->fetchAll();
     <div id="add-prize-modal" class="modal fixed inset-0 bg-gray-600 bg-opacity-50 hidden flex items-center justify-center">
         <div class="bg-white rounded-lg p-6 w-full max-w-md">
             <h3 class="text-lg font-bold mb-4">添加奖品</h3>
-            <form method="POST" action="?action=add_prize">
+            <form method="POST" action="?action=add_prize&project_id=<?php echo $selected_project_id; ?>#prizes">
                 <input type="hidden" name="project_id" value="<?php echo $selected_project_id; ?>">
                 <div class="mb-4">
                     <label class="block text-sm font-medium text-gray-700 mb-2">奖品名称</label>
@@ -704,7 +704,7 @@ $lottery_records = $records_stmt->fetchAll();
     <div id="edit-prize-modal" class="modal fixed inset-0 bg-gray-600 bg-opacity-50 hidden flex items-center justify-center">
         <div class="bg-white rounded-lg p-6 w-full max-w-md">
             <h3 class="text-lg font-bold mb-4">编辑奖品</h3>
-            <form method="POST" action="?action=edit_prize">
+            <form method="POST" action="?action=edit_prize&project_id=<?php echo $selected_project_id; ?>#prizes">
                 <input type="hidden" name="id" id="edit-prize-id">
                 <div class="mb-4">
                     <label class="block text-sm font-medium text-gray-700 mb-2">奖品名称</label>
@@ -745,7 +745,7 @@ $lottery_records = $records_stmt->fetchAll();
     <div id="add-user-modal" class="modal fixed inset-0 bg-gray-600 bg-opacity-50 hidden flex items-center justify-center">
         <div class="bg-white rounded-lg p-6 w-full max-w-md">
             <h3 class="text-lg font-bold mb-4">添加用户</h3>
-            <form method="POST" action="?action=add_user">
+            <form method="POST" action="?action=add_user#users">
                 <div class="mb-4">
                     <label class="block text-sm font-medium text-gray-700 mb-2">用户姓名</label>
                     <input type="text" name="name" class="w-full border border-gray-300 rounded-lg px-3 py-2" required>
@@ -770,7 +770,7 @@ $lottery_records = $records_stmt->fetchAll();
     <div id="edit-user-modal" class="modal fixed inset-0 bg-gray-600 bg-opacity-50 hidden flex items-center justify-center">
         <div class="bg-white rounded-lg p-6 w-full max-w-md">
             <h3 class="text-lg font-bold mb-4">编辑用户</h3>
-            <form method="POST" action="?action=edit_user">
+            <form method="POST" action="?action=edit_user#users">
                 <input type="hidden" name="id" id="edit-user-id">
                 <div class="mb-4">
                     <label class="block text-sm font-medium text-gray-700 mb-2">用户姓名</label>
@@ -792,7 +792,7 @@ $lottery_records = $records_stmt->fetchAll();
     <div id="set-times-modal" class="modal fixed inset-0 bg-gray-600 bg-opacity-50 hidden flex items-center justify-center">
         <div class="bg-white rounded-lg p-6 w-full max-w-md">
             <h3 class="text-lg font-bold mb-4">设置抽奖次数</h3>
-            <form method="POST" action="?action=set_user_times">
+            <form method="POST" action="?action=set_user_times&project_id=<?php echo $selected_project_id; ?>#user-times">
                 <input type="hidden" name="project_id" value="<?php echo $selected_project_id; ?>">
                 <div class="mb-4">
                     <label class="block text-sm font-medium text-gray-700 mb-2">选择用户</label>
@@ -832,7 +832,7 @@ $lottery_records = $records_stmt->fetchAll();
     <div id="edit-times-modal" class="modal fixed inset-0 bg-gray-600 bg-opacity-50 hidden flex items-center justify-center">
         <div class="bg-white rounded-lg p-6 w-full max-w-md">
             <h3 class="text-lg font-bold mb-4">编辑抽奖次数</h3>
-            <form method="POST" action="?action=set_user_times">
+            <form method="POST" action="?action=set_user_times#user-times">
                 <input type="hidden" name="user_id" id="edit-times-user-id">
                 <input type="hidden" name="project_id" id="edit-times-project-id">
                 <div class="mb-4">
@@ -909,7 +909,7 @@ $lottery_records = $records_stmt->fetchAll();
         if (confirm('确定要删除这个项目吗？删除后相关的奖品和记录也会被删除。')) {
             const form = document.createElement('form');
             form.method = 'POST';
-            form.action = '?action=delete_project';
+            form.action = '?action=delete_project#projects';
             
             const input = document.createElement('input');
             input.type = 'hidden';
@@ -987,7 +987,7 @@ $lottery_records = $records_stmt->fetchAll();
         if (confirm('确定要删除这个奖品吗？')) {
             const form = document.createElement('form');
             form.method = 'POST';
-            form.action = '?action=delete_prize';
+            form.action = '?action=delete_prize&project_id=<?php echo $selected_project_id; ?>#prizes';
             
             const input = document.createElement('input');
             input.type = 'hidden';
@@ -1012,7 +1012,7 @@ $lottery_records = $records_stmt->fetchAll();
         if (confirm('确定要删除这个用户吗？删除后相关的抽奖记录也会被删除。')) {
             const form = document.createElement('form');
             form.method = 'POST';
-            form.action = '?action=delete_user';
+            form.action = '?action=delete_user#users';
             
             const input = document.createElement('input');
             input.type = 'hidden';
