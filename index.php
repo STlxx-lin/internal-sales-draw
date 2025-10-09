@@ -226,23 +226,28 @@ $recent_records = $stmt->fetchAll();
 
             <!-- 奖品展示 -->
             <div class="bg-white rounded-lg shadow-lg p-6">
-                <h2 class="text-xl font-bold text-gray-800 mb-4">
-                    <i class="fa fa-trophy text-yellow-500 mr-2"></i>奖品列表
-                </h2>
-                <div class="space-y-3">
-                    <?php foreach ($prizes as $prize): ?>
-                        <div class="prize-item p-3 border rounded-lg hover:bg-gray-50">
+                <div class="flex items-center justify-between mb-4">
+                    <h2 class="text-xl font-bold text-gray-800">
+                        <i class="fa fa-trophy text-yellow-500 mr-2"></i>奖品列表
+                    </h2>
+                </div>
+                <!-- 滚动列表容器 -->
+                <div class="max-h-80 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 hover:scrollbar-thumb-gray-400" style="scrollbar-width: thin;">
+                    <div class="space-y-3 pr-2" id="prizesList">
+                    <?php foreach ($prizes as $index => $prize): ?>
+                        <div class="prize-item p-3 border rounded-lg hover:bg-gray-50" data-index="<?php echo $index; ?>">
                             <div class="flex items-center justify-between">
                                 <div>
                                     <div class="font-medium"><?php echo htmlspecialchars($prize['name']); ?></div>
                                     <div class="text-sm text-gray-500">剩余：<?php echo $prize['remaining_quantity'] >= 999999 ? '无限' : $prize['remaining_quantity']; ?> 个</div>
                                 </div>
                                 <div class="text-right">
-                                    <div class="text-sm text-blue-600"><?php echo $prize['probability']; ?>%</div>
+                                    <!-- <div class="text-sm text-blue-600"><?php echo $prize['probability']; ?>%</div> -->
                                 </div>
                             </div>
                         </div>
                     <?php endforeach; ?>
+                    </div>
                 </div>
             </div>
         </div>
