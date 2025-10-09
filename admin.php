@@ -109,13 +109,14 @@ if ($_POST) {
             case 'add_prize':
                 $project_id = (int)$_POST['project_id'];
                 $name = trim($_POST['name']);
-                $quantity = (int)$_POST['quantity'];
+                $is_unlimited = isset($_POST['is_unlimited']) && $_POST['is_unlimited'] == '1';
+                $quantity = $is_unlimited ? 999999 : (int)$_POST['quantity']; // 无限数量设为999999
                 $probability = (float)$_POST['probability'];
                 
                 if (empty($name)) {
                     throw new Exception('奖品名称不能为空');
                 }
-                if ($quantity <= 0) {
+                if (!$is_unlimited && $quantity <= 0) {
                     throw new Exception('奖品数量必须大于0');
                 }
                 if ($probability < 0 || $probability > 100) {
@@ -130,13 +131,14 @@ if ($_POST) {
             case 'edit_prize':
                 $id = (int)$_POST['id'];
                 $name = trim($_POST['name']);
-                $quantity = (int)$_POST['quantity'];
+                $is_unlimited = isset($_POST['is_unlimited']) && $_POST['is_unlimited'] == '1';
+                $quantity = $is_unlimited ? 999999 : (int)$_POST['quantity']; // 无限数量设为999999
                 $probability = (float)$_POST['probability'];
                 
                 if (empty($name)) {
                     throw new Exception('奖品名称不能为空');
                 }
-                if ($quantity < 0) {
+                if (!$is_unlimited && $quantity < 0) {
                     throw new Exception('奖品数量不能小于0');
                 }
                 if ($probability < 0 || $probability > 100) {
@@ -419,7 +421,7 @@ $lottery_records = $records_stmt->fetchAll();
                             <tr class="bg-white border-b">
                                 <td class="px-6 py-4"><?php echo $prize['id']; ?></td>
                                 <td class="px-6 py-4 font-medium"><?php echo htmlspecialchars($prize['name']); ?></td>
-                                <td class="px-6 py-4"><?php echo $prize['remaining_quantity']; ?></td>
+                                <td class="px-6 py-4"><?php echo $prize['remaining_quantity'] >= 999999 ? '无限' : $prize['remaining_quantity']; ?></td>
                                 <td class="px-6 py-4"><?php echo $prize['probability']; ?>%</td>
                                 <td class="px-6 py-4">
                                     <button onclick="editPrize(<?php echo $prize['id']; ?>, '<?php echo htmlspecialchars($prize['name'], ENT_QUOTES); ?>', <?php echo $prize['remaining_quantity']; ?>, <?php echo $prize['probability']; ?>)" class="text-blue-600 hover:text-blue-900 mr-3">
@@ -669,7 +671,18 @@ $lottery_records = $records_stmt->fetchAll();
                 </div>
                 <div class="mb-4">
                     <label class="block text-sm font-medium text-gray-700 mb-2">奖品数量</label>
-                    <input type="number" name="quantity" min="1" class="w-full border border-gray-300 rounded-lg px-3 py-2" required>
+                    <div class="space-y-2">
+                        <label class="flex items-center">
+                            <input type="radio" name="quantity_type" value="unlimited" class="mr-2" checked onchange="toggleQuantityInput(this)">
+                            <span>无限数量</span>
+                        </label>
+                        <label class="flex items-center">
+                            <input type="radio" name="quantity_type" value="limited" class="mr-2" onchange="toggleQuantityInput(this)">
+                            <span>限定数量</span>
+                        </label>
+                    </div>
+                    <input type="hidden" name="is_unlimited" value="1">
+                    <input type="number" name="quantity" min="1" class="w-full border border-gray-300 rounded-lg px-3 py-2 mt-2 hidden" placeholder="请输入数量">
                 </div>
                 <div class="mb-4">
                     <label class="block text-sm font-medium text-gray-700 mb-2">中奖概率(%)</label>
@@ -699,7 +712,18 @@ $lottery_records = $records_stmt->fetchAll();
                 </div>
                 <div class="mb-4">
                     <label class="block text-sm font-medium text-gray-700 mb-2">剩余数量</label>
-                    <input type="number" name="quantity" id="edit-prize-quantity" min="0" class="w-full border border-gray-300 rounded-lg px-3 py-2" required>
+                    <div class="space-y-2">
+                        <label class="flex items-center">
+                            <input type="radio" name="quantity_type" value="unlimited" class="mr-2" onchange="toggleEditQuantityInput(this)">
+                            <span>无限数量</span>
+                        </label>
+                        <label class="flex items-center">
+                            <input type="radio" name="quantity_type" value="limited" class="mr-2" onchange="toggleEditQuantityInput(this)">
+                            <span>限定数量</span>
+                        </label>
+                    </div>
+                    <input type="hidden" name="is_unlimited" value="0">
+                    <input type="number" name="quantity" id="edit-prize-quantity" min="0" class="w-full border border-gray-300 rounded-lg px-3 py-2 mt-2" required>
                 </div>
                 <div class="mb-4">
                     <label class="block text-sm font-medium text-gray-700 mb-2">中奖概率(%)</label>
@@ -902,9 +926,60 @@ $lottery_records = $records_stmt->fetchAll();
     function editPrize(id, name, quantity, probability) {
         document.getElementById('edit-prize-id').value = id;
         document.getElementById('edit-prize-name').value = name;
-        document.getElementById('edit-prize-quantity').value = quantity;
         document.getElementById('edit-prize-probability').value = probability;
+        
+        // 判断是否为无限数量（999999表示无限）
+        const isUnlimited = quantity >= 999999;
+        const quantityRadios = document.querySelectorAll('#edit-prize-modal input[name="quantity_type"]');
+        const quantityInput = document.getElementById('edit-prize-quantity');
+        const isUnlimitedInput = document.querySelector('#edit-prize-modal input[name="is_unlimited"]');
+        
+        if (isUnlimited) {
+            quantityRadios[0].checked = true; // 选择无限数量
+            quantityInput.style.display = 'none';
+            quantityInput.required = false;
+            isUnlimitedInput.value = '1';
+        } else {
+            quantityRadios[1].checked = true; // 选择限定数量
+            quantityInput.style.display = 'block';
+            quantityInput.required = true;
+            quantityInput.value = quantity;
+            isUnlimitedInput.value = '0';
+        }
+        
         showModal('edit-prize-modal');
+    }
+
+    // 切换数量输入框显示（添加奖品）
+    function toggleQuantityInput(radio) {
+        const quantityInput = radio.closest('form').querySelector('input[name="quantity"]');
+        const isUnlimitedInput = radio.closest('form').querySelector('input[name="is_unlimited"]');
+        
+        if (radio.value === 'unlimited') {
+            quantityInput.style.display = 'none';
+            quantityInput.required = false;
+            isUnlimitedInput.value = '1';
+        } else {
+            quantityInput.style.display = 'block';
+            quantityInput.required = true;
+            isUnlimitedInput.value = '0';
+        }
+    }
+
+    // 切换数量输入框显示（编辑奖品）
+    function toggleEditQuantityInput(radio) {
+        const quantityInput = document.getElementById('edit-prize-quantity');
+        const isUnlimitedInput = document.querySelector('#edit-prize-modal input[name="is_unlimited"]');
+        
+        if (radio.value === 'unlimited') {
+            quantityInput.style.display = 'none';
+            quantityInput.required = false;
+            isUnlimitedInput.value = '1';
+        } else {
+            quantityInput.style.display = 'block';
+            quantityInput.required = true;
+            isUnlimitedInput.value = '0';
+        }
     }
 
     // 删除奖品

@@ -80,9 +80,9 @@ try {
     $stmt = $pdo->prepare("UPDATE user_project_times SET remaining_times = remaining_times - 1 WHERE user_id = ? AND project_id = ?");
     $stmt->execute([$user['id'], $project_id]);
     
-    // 如果中奖且不是"没有中奖"奖品，更新奖品剩余数量
+    // 如果中奖且不是"没有中奖"奖品，更新奖品剩余数量（无限数量的奖品不扣减）
     $is_no_prize = $won_prize && $won_prize['name'] === '没有中奖';
-    if ($won_prize && !$is_no_prize) {
+    if ($won_prize && !$is_no_prize && $won_prize['remaining_quantity'] < 999999) {
         $stmt = $pdo->prepare("UPDATE prizes SET remaining_quantity = remaining_quantity - 1 WHERE id = ?");
         $stmt->execute([$won_prize['id']]);
     }

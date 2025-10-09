@@ -235,7 +235,7 @@ $recent_records = $stmt->fetchAll();
                             <div class="flex items-center justify-between">
                                 <div>
                                     <div class="font-medium"><?php echo htmlspecialchars($prize['name']); ?></div>
-                                    <div class="text-sm text-gray-500">剩余：<?php echo $prize['remaining_quantity']; ?> 个</div>
+                                    <div class="text-sm text-gray-500">剩余：<?php echo $prize['remaining_quantity'] >= 999999 ? '无限' : $prize['remaining_quantity']; ?> 个</div>
                                 </div>
                                 <div class="text-right">
                                     <div class="text-sm text-blue-600"><?php echo $prize['probability']; ?>%</div>
