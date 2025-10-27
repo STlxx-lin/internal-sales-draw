@@ -241,6 +241,52 @@ if ($_POST) {
                 $message = '用户抽奖次数设置成功';
                 break;
                 
+            case 'batch_set_user_times':
+                $project_id = (int)$_POST['project_id'];
+                $times = (int)$_POST['times'];
+                $is_visible = isset($_POST['is_visible']) ? 1 : 0;
+                $user_ids = $_POST['user_ids'] ?? [];
+                
+                if ($times < 0) {
+                    throw new Exception('抽奖次数不能小于0');
+                }
+                
+                if (empty($user_ids)) {
+                    throw new Exception('请至少选择一个用户');
+                }
+                
+                // 开始事务
+                $pdo->beginTransaction();
+                
+                try {
+                    $success_count = 0;
+                    foreach ($user_ids as $user_id) {
+                        $user_id = (int)$user_id;
+                        
+                        // 检查记录是否存在
+                        $stmt = $pdo->prepare("SELECT id FROM user_project_times WHERE user_id = ? AND project_id = ?");
+                        $stmt->execute([$user_id, $project_id]);
+                        $exists = $stmt->fetch();
+                        
+                        if ($exists) {
+                            $stmt = $pdo->prepare("UPDATE user_project_times SET total_times = ?, remaining_times = ?, is_visible = ? WHERE user_id = ? AND project_id = ?");
+                            $stmt->execute([$times, $times, $is_visible, $user_id, $project_id]);
+                        } else {
+                            $stmt = $pdo->prepare("INSERT INTO user_project_times (user_id, project_id, total_times, remaining_times, is_visible) VALUES (?, ?, ?, ?, ?)");
+                            $stmt->execute([$user_id, $project_id, $times, $times, $is_visible]);
+                        }
+                        
+                        $success_count++;
+                    }
+                    
+                    $pdo->commit();
+                    $message = "成功为 {$success_count} 个用户设置抽奖次数";
+                } catch (Exception $e) {
+                    $pdo->rollBack();
+                    throw $e;
+                }
+                break;
+                
             case 'update_probabilities':
                 // 处理概率批量更新 - 独立的异常处理确保始终返回JSON
                 try {
@@ -630,9 +676,14 @@ $lottery_records = $records_stmt->fetchAll();
                             <?php endforeach; ?>
                         </select>
                     </div>
-                    <button onclick="showModal('set-times-modal')" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg transition">
-                        <i class="fa fa-plus mr-2"></i>分配次数
-                    </button>
+                    <div class="flex space-x-3">
+                        <button onclick="showModal('batch-set-times-modal')" class="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg transition">
+                            <i class="fa fa-users mr-2"></i>批量分配
+                        </button>
+                        <button onclick="showModal('set-times-modal')" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg transition">
+                            <i class="fa fa-plus mr-2"></i>分配次数
+                        </button>
+                    </div>
                 </div>
                 
                 <div class="overflow-x-auto">
@@ -994,6 +1045,62 @@ $lottery_records = $records_stmt->fetchAll();
         </div>
     </div>
 
+    <!-- 批量分配次数模态框 -->
+    <div id="batch-set-times-modal" class="modal fixed inset-0 bg-gray-600 bg-opacity-50 hidden flex items-center justify-center">
+        <div class="bg-white rounded-lg p-6 w-full max-w-2xl">
+            <h3 class="text-lg font-bold mb-4">批量分配抽奖次数</h3>
+            <form method="POST" action="?action=batch_set_user_times#user-times">
+                <input type="hidden" name="project_id" value="<?php echo $selected_project_id; ?>">
+                
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">选择用户</label>
+                    <div class="border border-gray-300 rounded-lg p-3 max-h-40 overflow-y-auto">
+                        <?php foreach ($users as $user): ?>
+                        <div class="flex items-center mb-2">
+                            <input type="checkbox" name="user_ids[]" value="<?php echo $user['id']; ?>" id="user-<?php echo $user['id']; ?>" class="mr-2">
+                            <label for="user-<?php echo $user['id']; ?>" class="text-sm flex-1">
+                                <?php echo htmlspecialchars($user['name']); ?> (<?php echo htmlspecialchars($user['ip_address']); ?>)
+                            </label>
+                        </div>
+                        <?php endforeach; ?>
+                    </div>
+                    <div class="mt-2">
+                        <button type="button" onclick="toggleAllUsers(true)" class="text-xs text-blue-600 hover:text-blue-800 mr-3">全选</button>
+                        <button type="button" onclick="toggleAllUsers(false)" class="text-xs text-blue-600 hover:text-blue-800">取消全选</button>
+                    </div>
+                </div>
+                
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">抽奖次数</label>
+                    <input type="number" name="times" min="0" class="w-full border border-gray-300 rounded-lg px-3 py-2" required>
+                </div>
+                
+                <div class="mb-4">
+                    <label class="flex items-center">
+                        <input type="checkbox" name="is_visible" checked class="mr-2">
+                        <span class="text-sm text-gray-700">在该项目中显示这些用户</span>
+                    </label>
+                </div>
+                
+                <div class="mb-4 p-3 bg-blue-50 border border-blue-200 rounded">
+                    <p class="text-sm text-blue-800">
+                        <i class="fa fa-info-circle mr-1"></i>
+                        提示：批量分配将为所有选中的用户设置相同的抽奖次数。如果用户已有该项目的抽奖次数，将被覆盖。
+                    </p>
+                </div>
+                
+                <div class="flex justify-end space-x-3">
+                    <button type="button" onclick="hideModal('batch-set-times-modal')" class="px-4 py-2 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50">
+                        取消
+                    </button>
+                    <button type="submit" class="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600">
+                        批量设置
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <!-- 概率调整模态框 -->
     <div id="probability-adjust-modal" class="modal fixed inset-0 bg-gray-600 bg-opacity-50 hidden flex items-center justify-center">
         <div class="bg-white rounded-lg p-6 w-full max-w-2xl">
@@ -1248,6 +1355,14 @@ $lottery_records = $records_stmt->fetchAll();
         document.getElementById('edit-times-times').value = times;
         document.getElementById('edit-times-visible').checked = isVisible == 1;
         showModal('edit-times-modal');
+    }
+
+    // 全选/取消全选用户
+    function toggleAllUsers(selectAll) {
+        const checkboxes = document.querySelectorAll('#batch-set-times-modal input[name="user_ids[]"]');
+        checkboxes.forEach(checkbox => {
+            checkbox.checked = selectAll;
+        });
     }
 
     // 用户搜索过滤功能
