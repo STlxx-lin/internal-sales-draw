@@ -170,10 +170,15 @@ if ($_POST) {
                 if ($probability < 0 || $probability > 100) {
                     throw new Exception('中奖概率必须在0-100之间');
                 }
+                $stmt = $pdo->prepare("SELECT project_id FROM prizes WHERE id = ?");
+                $stmt->execute([$id]);
+                $project_id = (int)($stmt->fetchColumn() ?: 0);
+                if (!$project_id) {
+                    throw new Exception('奖品不存在');
+                }
                 
                 $stmt = $pdo->prepare("UPDATE prizes SET name = ?, remaining_quantity = ?, probability = ? WHERE id = ?");
                 $stmt->execute([$name, $quantity, $probability, $id]);
-                $project_id = $_POST['project_id'] ?? 0;
                 header('Location: admin.php?project_id=' . $project_id . '#prizes');
                 exit;
                 break;
@@ -299,6 +304,64 @@ if ($_POST) {
                     $pdo->rollBack();
                     throw $e;
                 }
+                break;
+                
+            case 'get_user_times':
+                $project_id = (int)($_POST['project_id'] ?? 0);
+                $rows_html = '';
+                
+                if ($project_id) {
+                    $stmt = $pdo->prepare("
+                        SELECT upt.*, u.name as user_name, u.ip_address 
+                        FROM user_project_times upt 
+                        JOIN users u ON upt.user_id = u.id 
+                        WHERE upt.project_id = ? 
+                        ORDER BY u.name
+                    ");
+                    $stmt->execute([$project_id]);
+                    $user_project_times = $stmt->fetchAll();
+                    
+                    ob_start();
+                    if (empty($user_project_times)) {
+                        ?>
+                        <tr>
+                            <td colspan="6" class="px-6 py-8 text-center text-gray-500">
+                                <i class="fa fa-inbox text-4xl mb-2"></i>
+                                <div>暂无用户次数</div>
+                            </td>
+                        </tr>
+                        <?php
+                    } else {
+                        foreach ($user_project_times as $upt) {
+                            ?>
+                            <tr class="bg-white border-b" data-name="<?php echo htmlspecialchars($upt['user_name']); ?>" data-total="<?php echo $upt['total_times']; ?>" data-remaining="<?php echo $upt['remaining_times']; ?>">
+                                <td class="px-6 py-4 font-medium"><?php echo htmlspecialchars($upt['user_name']); ?></td>
+                                <td class="px-6 py-4"><?php echo htmlspecialchars($upt['ip_address']); ?></td>
+                                <td class="px-6 py-4"><?php echo $upt['total_times']; ?></td>
+                                <td class="px-6 py-4"><?php echo $upt['remaining_times']; ?></td>
+                                <td class="px-6 py-4">
+                                    <span class="px-2 py-1 text-xs rounded-full <?php echo $upt['is_visible'] ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'; ?>">
+                                        <?php echo $upt['is_visible'] ? '显示' : '隐藏'; ?>
+                                    </span>
+                                </td>
+                                <td class="px-6 py-4">
+                                    <button onclick="editUserTimes(<?php echo $upt['user_id']; ?>, <?php echo $project_id; ?>, <?php echo $upt['remaining_times']; ?>, <?php echo $upt['is_visible']; ?>)" class="text-blue-600 hover:text-blue-900">
+                                        <i class="fa fa-edit"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                            <?php
+                        }
+                    }
+                    $rows_html = ob_get_clean();
+                }
+                
+                header('Content-Type: application/json');
+                echo json_encode([
+                    'success' => true,
+                    'rows_html' => $rows_html
+                ]);
+                exit;
                 break;
                 
             case 'get_records':
@@ -813,6 +876,9 @@ $lottery_records = $records_stmt->fetchAll();
                     </div>
                     <div class="flex items-center space-x-3">
                         <input type="text" id="user-times-filter" placeholder="筛选姓名" class="border border-gray-300 rounded-lg px-3 py-2 text-sm" oninput="applyUserTimesFilter()">
+                        <button type="button" onclick="refreshUserTimes()" class="px-3 py-1 text-sm text-blue-600 border border-blue-300 rounded hover:bg-blue-50">
+                            刷新
+                        </button>
                         <button onclick="showModal('batch-set-times-modal')" class="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg transition">
                             <i class="fa fa-users mr-2"></i>批量分配
                         </button>
@@ -1398,6 +1464,32 @@ $lottery_records = $records_stmt->fetchAll();
             sessionStorage.removeItem('admin_scroll_y');
             sessionStorage.removeItem('admin_scroll_hash');
         }
+    }
+
+    function refreshUserTimes() {
+        const formData = new FormData();
+        formData.append('action', 'get_user_times');
+        formData.append('project_id', '<?php echo (int)$selected_project_id; ?>');
+
+        fetch(window.location.href, {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (!data.success) {
+                alert('刷新失败：' + (data.message || '未知错误'));
+                return;
+            }
+            const tbody = document.getElementById('user-times-body');
+            if (tbody) {
+                tbody.innerHTML = data.rows_html || '';
+            }
+            applyUserTimesFilter();
+        })
+        .catch(() => {
+            alert('刷新失败，请重试');
+        });
     }
 
     let lotteryRecordsSearchTimer = null;
