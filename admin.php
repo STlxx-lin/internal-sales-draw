@@ -241,20 +241,20 @@ if ($_POST) {
                 $times = (int)$_POST['times'];
                 $is_visible = isset($_POST['is_visible']) ? 1 : 0;
                 
-                if ($times < 0) {
-                    throw new Exception('抽奖次数不能小于0');
-                }
-                
-                $stmt = $pdo->prepare("SELECT id FROM user_project_times WHERE user_id = ? AND project_id = ?");
+                $stmt = $pdo->prepare("SELECT total_times, remaining_times FROM user_project_times WHERE user_id = ? AND project_id = ?");
                 $stmt->execute([$user_id, $project_id]);
-                $exists = $stmt->fetch();
+                $row = $stmt->fetch();
                 
-                if ($exists) {
-                    $stmt = $pdo->prepare("UPDATE user_project_times SET total_times = total_times + ?, remaining_times = remaining_times + ?, is_visible = ? WHERE user_id = ? AND project_id = ?");
-                    $stmt->execute([$times, $times, $is_visible, $user_id, $project_id]);
+                if ($row) {
+                    $new_total = max(0, (int)$row['total_times'] + $times);
+                    $new_remaining = max(0, (int)$row['remaining_times'] + $times);
+                    $stmt = $pdo->prepare("UPDATE user_project_times SET total_times = ?, remaining_times = ?, is_visible = ? WHERE user_id = ? AND project_id = ?");
+                    $stmt->execute([$new_total, $new_remaining, $is_visible, $user_id, $project_id]);
                 } else {
+                    $init_total = $times >= 0 ? $times : 0;
+                    $init_remaining = $times >= 0 ? $times : 0;
                     $stmt = $pdo->prepare("INSERT INTO user_project_times (user_id, project_id, total_times, remaining_times, is_visible) VALUES (?, ?, ?, ?, ?)");
-                    $stmt->execute([$user_id, $project_id, $times, $times, $is_visible]);
+                    $stmt->execute([$user_id, $project_id, $init_total, $init_remaining, $is_visible]);
                 }
                 
                 header('Location: admin.php?project_id=' . $project_id . '#user-times');
@@ -267,10 +267,6 @@ if ($_POST) {
                 $is_visible = isset($_POST['is_visible']) ? 1 : 0;
                 $user_ids = $_POST['user_ids'] ?? [];
                 
-                if ($times < 0) {
-                    throw new Exception('抽奖次数不能小于0');
-                }
-                
                 if (empty($user_ids)) {
                     throw new Exception('请至少选择一个用户');
                 }
@@ -282,16 +278,20 @@ if ($_POST) {
                     foreach ($user_ids as $user_id) {
                         $user_id = (int)$user_id;
                         
-                        $stmt = $pdo->prepare("SELECT id FROM user_project_times WHERE user_id = ? AND project_id = ?");
+                        $stmt = $pdo->prepare("SELECT total_times, remaining_times FROM user_project_times WHERE user_id = ? AND project_id = ?");
                         $stmt->execute([$user_id, $project_id]);
-                        $exists = $stmt->fetch();
+                        $row = $stmt->fetch();
                         
-                        if ($exists) {
-                            $stmt = $pdo->prepare("UPDATE user_project_times SET total_times = total_times + ?, remaining_times = remaining_times + ?, is_visible = ? WHERE user_id = ? AND project_id = ?");
-                            $stmt->execute([$times, $times, $is_visible, $user_id, $project_id]);
+                        if ($row) {
+                            $new_total = max(0, (int)$row['total_times'] + $times);
+                            $new_remaining = max(0, (int)$row['remaining_times'] + $times);
+                            $stmt = $pdo->prepare("UPDATE user_project_times SET total_times = ?, remaining_times = ?, is_visible = ? WHERE user_id = ? AND project_id = ?");
+                            $stmt->execute([$new_total, $new_remaining, $is_visible, $user_id, $project_id]);
                         } else {
+                            $init_total = $times >= 0 ? $times : 0;
+                            $init_remaining = $times >= 0 ? $times : 0;
                             $stmt = $pdo->prepare("INSERT INTO user_project_times (user_id, project_id, total_times, remaining_times, is_visible) VALUES (?, ?, ?, ?, ?)");
-                            $stmt->execute([$user_id, $project_id, $times, $times, $is_visible]);
+                            $stmt->execute([$user_id, $project_id, $init_total, $init_remaining, $is_visible]);
                         }
                         
                         $success_count++;
@@ -1230,7 +1230,7 @@ $lottery_records = $records_stmt->fetchAll();
                 </div>
                 <div class="mb-4">
                     <label class="block text-sm font-medium text-gray-700 mb-2">增加抽奖次数</label>
-                    <input type="number" name="times" min="0" class="w-full border border-gray-300 rounded-lg px-3 py-2" required>
+                    <input type="number" name="times" min="-999999" class="w-full border border-gray-300 rounded-lg px-3 py-2" required>
                 </div>
                 <div class="mb-4">
                     <label class="flex items-center">
@@ -1259,7 +1259,7 @@ $lottery_records = $records_stmt->fetchAll();
                 <input type="hidden" name="project_id" id="edit-times-project-id">
                 <div class="mb-4">
                     <label class="block text-sm font-medium text-gray-700 mb-2">增加抽奖次数</label>
-                    <input type="number" name="times" id="edit-times-times" min="0" class="w-full border border-gray-300 rounded-lg px-3 py-2" required>
+                    <input type="number" name="times" id="edit-times-times" min="-999999" class="w-full border border-gray-300 rounded-lg px-3 py-2" required>
                 </div>
                 <div class="mb-4 flex space-x-2">
                     <button type="button" onclick="incrementTimes('edit-times-times', 1)" class="px-3 py-1 text-sm text-blue-600 border border-blue-300 rounded hover:bg-blue-50">+1</button>
@@ -1310,7 +1310,7 @@ $lottery_records = $records_stmt->fetchAll();
                 
                 <div class="mb-4">
                     <label class="block text-sm font-medium text-gray-700 mb-2">抽奖次数</label>
-                    <input type="number" name="times" min="0" class="w-full border border-gray-300 rounded-lg px-3 py-2" required>
+                    <input type="number" name="times" min="-999999" class="w-full border border-gray-300 rounded-lg px-3 py-2" required>
                 </div>
                 
                 <div class="mb-4">
@@ -1647,7 +1647,7 @@ $lottery_records = $records_stmt->fetchAll();
     function incrementTimes(inputId, delta) {
         const input = document.getElementById(inputId);
         const current = parseInt(input.value || '0', 10);
-        input.value = Math.max(0, (Number.isNaN(current) ? 0 : current) + delta);
+        input.value = (Number.isNaN(current) ? 0 : current) + delta;
         input.focus();
     }
 
