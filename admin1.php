@@ -225,10 +225,24 @@ if ($_POST) {
                 $records_per_page = 20;
                 $page = isset($_POST['page']) ? max(1, (int)$_POST['page']) : 1;
                 $offset = ($page - 1) * $records_per_page;
+                $keyword = trim($_POST['keyword'] ?? '');
+                $use_search = $keyword !== '';
+                $like_keyword = '%' . $keyword . '%';
                 
-                $total_records_stmt = $pdo->query("SELECT COUNT(*) FROM lottery_records");
-                $total_records = $total_records_stmt->fetchColumn();
-                $total_pages = ceil($total_records / $records_per_page);
+                if ($use_search) {
+                    $total_records_stmt = $pdo->prepare("
+                        SELECT COUNT(*)
+                        FROM lottery_records lr
+                        JOIN users u ON lr.user_id = u.id
+                        WHERE u.name LIKE ?
+                    ");
+                    $total_records_stmt->execute([$like_keyword]);
+                    $total_records = $total_records_stmt->fetchColumn();
+                } else {
+                    $total_records_stmt = $pdo->query("SELECT COUNT(*) FROM lottery_records");
+                    $total_records = $total_records_stmt->fetchColumn();
+                }
+                $total_pages = $total_records > 0 ? (int)ceil($total_records / $records_per_page) : 0;
                 
                 $records_stmt = $pdo->prepare("
                     SELECT lr.*, u.name as user_name, u.ip_address, 
@@ -237,10 +251,15 @@ if ($_POST) {
                     JOIN users u ON lr.user_id = u.id
                     JOIN projects pr ON lr.project_id = pr.id
                     LEFT JOIN prizes p ON lr.prize_id = p.id
+                    " . ($use_search ? "WHERE u.name LIKE ? " : "") . "
                     ORDER BY lr.created_at DESC
                     LIMIT " . (int)$records_per_page . " OFFSET " . (int)$offset
                 );
-                $records_stmt->execute();
+                if ($use_search) {
+                    $records_stmt->execute([$like_keyword]);
+                } else {
+                    $records_stmt->execute();
+                }
                 $lottery_records = $records_stmt->fetchAll();
                 
                 ob_start();
@@ -256,7 +275,7 @@ if ($_POST) {
                 } else {
                     foreach ($lottery_records as $record) {
                         ?>
-                        <tr class="bg-white border-b hover:bg-gray-50">
+                        <tr class="bg-white border-b hover:bg-gray-50" data-user="<?php echo htmlspecialchars($record['user_name']); ?>">
                             <td class="px-6 py-4"><?php echo $record['id']; ?></td>
                             <td class="px-6 py-4 font-medium"><?php echo htmlspecialchars($record['user_name']); ?></td>
                             <td class="px-6 py-4"><?php echo htmlspecialchars($record['ip_address']); ?></td>
@@ -285,21 +304,21 @@ if ($_POST) {
                     <div class="flex justify-center mt-6">
                         <nav class="flex space-x-2">
                             <?php if ($page > 1): ?>
-                                <a href="?page=<?php echo $page - 1; ?>#records" class="px-3 py-2 text-sm bg-white border border-gray-300 rounded-lg hover:bg-gray-50">
+                                <button type="button" onclick="refreshLotteryRecords(<?php echo $page - 1; ?>)" class="px-3 py-2 text-sm bg-white border border-gray-300 rounded-lg hover:bg-gray-50">
                                     <i class="fa fa-chevron-left"></i>
-                                </a>
+                                </button>
                             <?php endif; ?>
                             
                             <?php for ($i = max(1, $page - 2); $i <= min($total_pages, $page + 2); $i++): ?>
-                                <a href="?page=<?php echo $i; ?>#records" class="px-3 py-2 text-sm <?php echo $i == $page ? 'bg-blue-500 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'; ?> border border-gray-300 rounded-lg">
+                                <button type="button" onclick="refreshLotteryRecords(<?php echo $i; ?>)" class="px-3 py-2 text-sm <?php echo $i == $page ? 'bg-blue-500 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'; ?> border border-gray-300 rounded-lg">
                                     <?php echo $i; ?>
-                                </a>
+                                </button>
                             <?php endfor; ?>
                             
                             <?php if ($page < $total_pages): ?>
-                                <a href="?page=<?php echo $page + 1; ?>#records" class="px-3 py-2 text-sm bg-white border border-gray-300 rounded-lg hover:bg-gray-50">
+                                <button type="button" onclick="refreshLotteryRecords(<?php echo $page + 1; ?>)" class="px-3 py-2 text-sm bg-white border border-gray-300 rounded-lg hover:bg-gray-50">
                                     <i class="fa fa-chevron-right"></i>
-                                </a>
+                                </button>
                             <?php endif; ?>
                         </nav>
                     </div>
@@ -340,7 +359,7 @@ if ($selected_project_id) {
 $user_project_times = [];
 if ($selected_project_id) {
     $stmt = $pdo->prepare("
-        SELECT upt.*, u.name as user_name 
+        SELECT upt.*, u.name as user_name, u.ip_address 
         FROM user_project_times upt 
         JOIN users u ON upt.user_id = u.id 
         WHERE upt.project_id = ? 
@@ -539,9 +558,12 @@ $lottery_records = $records_stmt->fetchAll();
             <div id="content-users" class="tab-content p-6 hidden">
                 <div class="flex justify-between items-center mb-6">
                     <h2 class="text-xl font-bold text-gray-800">用户管理</h2>
-                    <button onclick="showModal('add-user-modal')" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg transition">
-                        <i class="fa fa-plus mr-2"></i>添加用户
-                    </button>
+                    <div class="flex items-center space-x-3">
+                        <input type="text" id="users-filter" placeholder="筛选姓名" class="border border-gray-300 rounded-lg px-3 py-2 text-sm" oninput="applyUsersFilter()">
+                        <button onclick="showModal('add-user-modal')" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg transition">
+                            <i class="fa fa-plus mr-2"></i>添加用户
+                        </button>
+                    </div>
                 </div>
                 
                 <div class="overflow-x-auto">
@@ -555,9 +577,9 @@ $lottery_records = $records_stmt->fetchAll();
                                 <th class="px-6 py-3">操作</th>
                             </tr>
                         </thead>
-                        <tbody>
+                        <tbody id="users-body">
                             <?php foreach ($users as $user): ?>
-                            <tr class="bg-white border-b">
+                            <tr class="bg-white border-b" data-name="<?php echo htmlspecialchars($user['name']); ?>">
                                 <td class="px-6 py-4"><?php echo $user['id']; ?></td>
                                 <td class="px-6 py-4 font-medium"><?php echo htmlspecialchars($user['name']); ?></td>
                                 <td class="px-6 py-4"><?php echo htmlspecialchars($user['ip_address']); ?></td>
@@ -590,26 +612,46 @@ $lottery_records = $records_stmt->fetchAll();
                             <?php endforeach; ?>
                         </select>
                     </div>
-                    <button onclick="showModal('set-times-modal')" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg transition">
-                        <i class="fa fa-plus mr-2"></i>分配次数
-                    </button>
+                    <div class="flex items-center space-x-3">
+                        <input type="text" id="user-times-filter" placeholder="筛选姓名" class="border border-gray-300 rounded-lg px-3 py-2 text-sm" oninput="applyUserTimesFilter()">
+                        <button onclick="showModal('set-times-modal')" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg transition">
+                            <i class="fa fa-plus mr-2"></i>分配次数
+                        </button>
+                    </div>
                 </div>
                 
                 <div class="overflow-x-auto">
                     <table class="w-full text-sm text-left">
                         <thead class="text-xs text-gray-700 uppercase bg-gray-50">
                             <tr>
-                                <th class="px-6 py-3">用户姓名</th>
-                                <th class="px-6 py-3">总次数</th>
-                                <th class="px-6 py-3">剩余次数</th>
+                                <th class="px-6 py-3">
+                                    <button type="button" class="flex items-center space-x-2" onclick="sortUserTimesTable('name')">
+                                        <span>用户姓名</span>
+                                        <i id="sort-icon-name" class="fa fa-sort text-xs"></i>
+                                    </button>
+                                </th>
+                                <th class="px-6 py-3">IP地址</th>
+                                <th class="px-6 py-3">
+                                    <button type="button" class="flex items-center space-x-2" onclick="sortUserTimesTable('total')">
+                                        <span>总次数</span>
+                                        <i id="sort-icon-total" class="fa fa-sort text-xs"></i>
+                                    </button>
+                                </th>
+                                <th class="px-6 py-3">
+                                    <button type="button" class="flex items-center space-x-2" onclick="sortUserTimesTable('remaining')">
+                                        <span>剩余次数</span>
+                                        <i id="sort-icon-remaining" class="fa fa-sort text-xs"></i>
+                                    </button>
+                                </th>
                                 <th class="px-6 py-3">是否显示</th>
                                 <th class="px-6 py-3">操作</th>
                             </tr>
                         </thead>
-                        <tbody>
+                        <tbody id="user-times-body">
                             <?php foreach ($user_project_times as $upt): ?>
-                            <tr class="bg-white border-b">
+                            <tr class="bg-white border-b" data-name="<?php echo htmlspecialchars($upt['user_name']); ?>" data-total="<?php echo $upt['total_times']; ?>" data-remaining="<?php echo $upt['remaining_times']; ?>">
                                 <td class="px-6 py-4 font-medium"><?php echo htmlspecialchars($upt['user_name']); ?></td>
+                                <td class="px-6 py-4"><?php echo htmlspecialchars($upt['ip_address']); ?></td>
                                 <td class="px-6 py-4"><?php echo $upt['total_times']; ?></td>
                                 <td class="px-6 py-4"><?php echo $upt['remaining_times']; ?></td>
                                 <td class="px-6 py-4">
@@ -634,6 +676,7 @@ $lottery_records = $records_stmt->fetchAll();
                 <div class="flex justify-between items-center mb-6">
                     <h2 class="text-xl font-bold text-gray-800">抽奖记录</h2>
                     <div class="flex items-center space-x-3">
+                        <input type="text" id="lottery-records-filter" placeholder="搜索用户" class="border border-gray-300 rounded-lg px-3 py-2 text-sm" oninput="scheduleLotteryRecordsSearch()">
                         <div class="text-sm text-gray-500">
                             共 <span id="total-records-count"><?php echo $total_records; ?></span> 条记录
                         </div>
@@ -665,7 +708,7 @@ $lottery_records = $records_stmt->fetchAll();
                             </tr>
                             <?php else: ?>
                                 <?php foreach ($lottery_records as $record): ?>
-                                <tr class="bg-white border-b hover:bg-gray-50">
+                        <tr class="bg-white border-b hover:bg-gray-50" data-user="<?php echo htmlspecialchars($record['user_name']); ?>">
                                     <td class="px-6 py-4"><?php echo $record['id']; ?></td>
                                     <td class="px-6 py-4 font-medium"><?php echo htmlspecialchars($record['user_name']); ?></td>
                                     <td class="px-6 py-4"><?php echo htmlspecialchars($record['ip_address']); ?></td>
@@ -995,10 +1038,27 @@ $lottery_records = $records_stmt->fetchAll();
         }
     }
 
-    function refreshLotteryRecords() {
+    let lotteryRecordsSearchTimer = null;
+    let currentRecordsPage = <?php echo (int)$page; ?>;
+
+    function scheduleLotteryRecordsSearch() {
+        if (lotteryRecordsSearchTimer) {
+            clearTimeout(lotteryRecordsSearchTimer);
+        }
+        lotteryRecordsSearchTimer = setTimeout(() => {
+            refreshLotteryRecords(1);
+        }, 300);
+    }
+
+    function refreshLotteryRecords(page) {
         const formData = new FormData();
         formData.append('action', 'get_records');
-        formData.append('page', '<?php echo (int)$page; ?>');
+        if (typeof page === 'number' && !Number.isNaN(page)) {
+            currentRecordsPage = Math.max(1, page);
+        }
+        formData.append('page', String(currentRecordsPage));
+        const keyword = document.getElementById('lottery-records-filter')?.value.trim() || '';
+        formData.append('keyword', keyword);
 
         fetch(window.location.href, {
             method: 'POST',
@@ -1022,9 +1082,102 @@ $lottery_records = $records_stmt->fetchAll();
             if (totalCount) {
                 totalCount.textContent = data.total_records;
             }
+            applyLotteryRecordsFilter();
         })
         .catch(() => {
             alert('刷新失败，请重试');
+        });
+    }
+
+    const userTimesSortState = { column: '', order: 'asc' };
+
+    function getUserTimesRows() {
+        const tbody = document.getElementById('user-times-body');
+        if (!tbody) {
+            return [];
+        }
+        return Array.from(tbody.querySelectorAll('tr'));
+    }
+
+    function updateUserTimesSortIcons(activeColumn, order) {
+        const iconMap = {
+            name: document.getElementById('sort-icon-name'),
+            total: document.getElementById('sort-icon-total'),
+            remaining: document.getElementById('sort-icon-remaining')
+        };
+        Object.keys(iconMap).forEach(key => {
+            const icon = iconMap[key];
+            if (!icon) {
+                return;
+            }
+            if (key !== activeColumn) {
+                icon.className = 'fa fa-sort text-xs';
+                return;
+            }
+            icon.className = order === 'asc' ? 'fa fa-sort-up text-xs' : 'fa fa-sort-down text-xs';
+        });
+    }
+
+    function sortUserTimesTable(column) {
+        const tbody = document.getElementById('user-times-body');
+        if (!tbody) {
+            return;
+        }
+        const rows = getUserTimesRows();
+        const nextOrder = userTimesSortState.column === column && userTimesSortState.order === 'asc' ? 'desc' : 'asc';
+        userTimesSortState.column = column;
+        userTimesSortState.order = nextOrder;
+        rows.sort((a, b) => {
+            let aValue = a.dataset[column] || '';
+            let bValue = b.dataset[column] || '';
+            if (column === 'name') {
+                const result = aValue.localeCompare(bValue, 'zh-Hans-CN', { numeric: true, sensitivity: 'base' });
+                return nextOrder === 'asc' ? result : -result;
+            }
+            const aNum = parseInt(aValue || '0', 10);
+            const bNum = parseInt(bValue || '0', 10);
+            return nextOrder === 'asc' ? aNum - bNum : bNum - aNum;
+        });
+        rows.forEach(row => tbody.appendChild(row));
+        updateUserTimesSortIcons(column, nextOrder);
+        applyUserTimesFilter();
+    }
+
+    function applyUserTimesFilter() {
+        const input = document.getElementById('user-times-filter');
+        const keyword = (input ? input.value : '').trim().toLowerCase();
+        const rows = getUserTimesRows();
+        rows.forEach(row => {
+            const name = (row.dataset.name || '').toLowerCase();
+            row.style.display = keyword === '' || name.includes(keyword) ? '' : 'none';
+        });
+    }
+
+    function applyUsersFilter() {
+        const input = document.getElementById('users-filter');
+        const keyword = (input ? input.value : '').trim().toLowerCase();
+        const tbody = document.getElementById('users-body');
+        if (!tbody) {
+            return;
+        }
+        const rows = Array.from(tbody.querySelectorAll('tr'));
+        rows.forEach(row => {
+            const name = (row.dataset.name || '').toLowerCase();
+            row.style.display = keyword === '' || name.includes(keyword) ? '' : 'none';
+        });
+    }
+
+    function applyLotteryRecordsFilter() {
+        const input = document.getElementById('lottery-records-filter');
+        const keyword = (input ? input.value : '').trim().toLowerCase();
+        const tbody = document.getElementById('lottery-records-body');
+        if (!tbody) {
+            return;
+        }
+        const rows = Array.from(tbody.querySelectorAll('tr'));
+        rows.forEach(row => {
+            const name = (row.dataset.user || '').toLowerCase();
+            row.style.display = keyword === '' || name.includes(keyword) ? '' : 'none';
         });
     }
 
