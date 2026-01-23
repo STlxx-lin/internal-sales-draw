@@ -64,7 +64,7 @@ if (!isset($_SESSION['admin_logged_in']) || $_SESSION['admin_logged_in'] !== tru
 }
 
 // 处理各种操作
-$action = $_GET['action'] ?? '';
+$action = $_POST['action'] ?? $_GET['action'] ?? '';
 
 // 处理退出登录
 if ($action === 'logout') {
@@ -174,13 +174,17 @@ if ($_POST) {
             case 'edit_user':
                 $id = (int)$_POST['id'];
                 $name = trim($_POST['name']);
+                $ip = trim($_POST['ip']);
                 
                 if (empty($name)) {
                     throw new Exception('用户姓名不能为空');
                 }
+                if (empty($ip)) {
+                    throw new Exception('IP地址不能为空');
+                }
                 
-                $stmt = $pdo->prepare("UPDATE users SET name = ? WHERE id = ?");
-                $stmt->execute([$name, $id]);
+                $stmt = $pdo->prepare("UPDATE users SET name = ?, ip_address = ? WHERE id = ?");
+                $stmt->execute([$name, $ip, $id]);
                 $message = '用户更新成功';
                 break;
                 
@@ -207,7 +211,7 @@ if ($_POST) {
                 $exists = $stmt->fetch();
                 
                 if ($exists) {
-                    $stmt = $pdo->prepare("UPDATE user_project_times SET total_times = ?, remaining_times = ?, is_visible = ? WHERE user_id = ? AND project_id = ?");
+                    $stmt = $pdo->prepare("UPDATE user_project_times SET total_times = total_times + ?, remaining_times = remaining_times + ?, is_visible = ? WHERE user_id = ? AND project_id = ?");
                     $stmt->execute([$times, $times, $is_visible, $user_id, $project_id]);
                 } else {
                     $stmt = $pdo->prepare("INSERT INTO user_project_times (user_id, project_id, total_times, remaining_times, is_visible) VALUES (?, ?, ?, ?, ?)");
@@ -216,6 +220,101 @@ if ($_POST) {
                 
                 $message = '用户抽奖次数设置成功';
                 break;
+
+            case 'get_records':
+                $records_per_page = 20;
+                $page = isset($_POST['page']) ? max(1, (int)$_POST['page']) : 1;
+                $offset = ($page - 1) * $records_per_page;
+                
+                $total_records_stmt = $pdo->query("SELECT COUNT(*) FROM lottery_records");
+                $total_records = $total_records_stmt->fetchColumn();
+                $total_pages = ceil($total_records / $records_per_page);
+                
+                $records_stmt = $pdo->prepare("
+                    SELECT lr.*, u.name as user_name, u.ip_address, 
+                           p.name as prize_name, pr.name as project_name
+                    FROM lottery_records lr
+                    JOIN users u ON lr.user_id = u.id
+                    JOIN projects pr ON lr.project_id = pr.id
+                    LEFT JOIN prizes p ON lr.prize_id = p.id
+                    ORDER BY lr.created_at DESC
+                    LIMIT " . (int)$records_per_page . " OFFSET " . (int)$offset
+                );
+                $records_stmt->execute();
+                $lottery_records = $records_stmt->fetchAll();
+                
+                ob_start();
+                if (empty($lottery_records)) {
+                    ?>
+                    <tr>
+                        <td colspan="6" class="px-6 py-8 text-center text-gray-500">
+                            <i class="fa fa-inbox text-4xl mb-2"></i>
+                            <div>暂无抽奖记录</div>
+                        </td>
+                    </tr>
+                    <?php
+                } else {
+                    foreach ($lottery_records as $record) {
+                        ?>
+                        <tr class="bg-white border-b hover:bg-gray-50">
+                            <td class="px-6 py-4"><?php echo $record['id']; ?></td>
+                            <td class="px-6 py-4 font-medium"><?php echo htmlspecialchars($record['user_name']); ?></td>
+                            <td class="px-6 py-4"><?php echo htmlspecialchars($record['ip_address']); ?></td>
+                            <td class="px-6 py-4"><?php echo htmlspecialchars($record['project_name']); ?></td>
+                            <td class="px-6 py-4">
+                                <?php if ($record['prize_id']): ?>
+                                    <span class="px-2 py-1 text-xs rounded-full bg-green-100 text-green-800">
+                                        <i class="fa fa-gift mr-1"></i><?php echo htmlspecialchars($record['prize_name']); ?>
+                                    </span>
+                                <?php else: ?>
+                                    <span class="px-2 py-1 text-xs rounded-full bg-gray-100 text-gray-600">
+                                        <i class="fa fa-times-circle mr-1"></i>未中奖
+                                    </span>
+                                <?php endif; ?>
+                            </td>
+                            <td class="px-6 py-4"><?php echo date('Y-m-d H:i:s', strtotime($record['created_at'])); ?></td>
+                        </tr>
+                        <?php
+                    }
+                }
+                $rows_html = ob_get_clean();
+                
+                ob_start();
+                if ($total_pages > 1) {
+                    ?>
+                    <div class="flex justify-center mt-6">
+                        <nav class="flex space-x-2">
+                            <?php if ($page > 1): ?>
+                                <a href="?page=<?php echo $page - 1; ?>#records" class="px-3 py-2 text-sm bg-white border border-gray-300 rounded-lg hover:bg-gray-50">
+                                    <i class="fa fa-chevron-left"></i>
+                                </a>
+                            <?php endif; ?>
+                            
+                            <?php for ($i = max(1, $page - 2); $i <= min($total_pages, $page + 2); $i++): ?>
+                                <a href="?page=<?php echo $i; ?>#records" class="px-3 py-2 text-sm <?php echo $i == $page ? 'bg-blue-500 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'; ?> border border-gray-300 rounded-lg">
+                                    <?php echo $i; ?>
+                                </a>
+                            <?php endfor; ?>
+                            
+                            <?php if ($page < $total_pages): ?>
+                                <a href="?page=<?php echo $page + 1; ?>#records" class="px-3 py-2 text-sm bg-white border border-gray-300 rounded-lg hover:bg-gray-50">
+                                    <i class="fa fa-chevron-right"></i>
+                                </a>
+                            <?php endif; ?>
+                        </nav>
+                    </div>
+                    <?php
+                }
+                $pagination_html = ob_get_clean();
+                
+                header('Content-Type: application/json');
+                echo json_encode([
+                    'success' => true,
+                    'total_records' => (int)$total_records,
+                    'rows_html' => $rows_html,
+                    'pagination_html' => $pagination_html
+                ]);
+                exit;
         }
     } catch (Exception $e) {
         $error = $e->getMessage();
@@ -464,7 +563,7 @@ $lottery_records = $records_stmt->fetchAll();
                                 <td class="px-6 py-4"><?php echo htmlspecialchars($user['ip_address']); ?></td>
                                 <td class="px-6 py-4"><?php echo date('Y-m-d H:i', strtotime($user['created_at'])); ?></td>
                                 <td class="px-6 py-4">
-                                    <button onclick="editUser(<?php echo $user['id']; ?>, '<?php echo htmlspecialchars($user['name'], ENT_QUOTES); ?>')" class="text-blue-600 hover:text-blue-900 mr-3">
+                                    <button onclick="editUser(<?php echo $user['id']; ?>, '<?php echo htmlspecialchars($user['name'], ENT_QUOTES); ?>', '<?php echo htmlspecialchars($user['ip_address'], ENT_QUOTES); ?>')" class="text-blue-600 hover:text-blue-900 mr-3">
                                         <i class="fa fa-edit"></i>
                                     </button>
                                     <button onclick="deleteUser(<?php echo $user['id']; ?>)" class="text-red-600 hover:text-red-900">
@@ -534,8 +633,13 @@ $lottery_records = $records_stmt->fetchAll();
             <div id="content-records" class="tab-content p-6 hidden">
                 <div class="flex justify-between items-center mb-6">
                     <h2 class="text-xl font-bold text-gray-800">抽奖记录</h2>
-                    <div class="text-sm text-gray-500">
-                        共 <?php echo $total_records; ?> 条记录
+                    <div class="flex items-center space-x-3">
+                        <div class="text-sm text-gray-500">
+                            共 <span id="total-records-count"><?php echo $total_records; ?></span> 条记录
+                        </div>
+                        <button type="button" onclick="refreshLotteryRecords()" class="px-3 py-1 text-sm text-blue-600 border border-blue-300 rounded hover:bg-blue-50">
+                            刷新
+                        </button>
                     </div>
                 </div>
                 
@@ -551,7 +655,7 @@ $lottery_records = $records_stmt->fetchAll();
                                 <th class="px-6 py-3">抽奖时间</th>
                             </tr>
                         </thead>
-                        <tbody>
+                        <tbody id="lottery-records-body">
                             <?php if (empty($lottery_records)): ?>
                             <tr>
                                 <td colspan="6" class="px-6 py-8 text-center text-gray-500">
@@ -586,29 +690,31 @@ $lottery_records = $records_stmt->fetchAll();
                 </div>
                 
                 <!-- 分页 -->
-                <?php if ($total_pages > 1): ?>
-                <div class="flex justify-center mt-6">
-                    <nav class="flex space-x-2">
-                        <?php if ($page > 1): ?>
-                            <a href="?page=<?php echo $page - 1; ?>#records" class="px-3 py-2 text-sm bg-white border border-gray-300 rounded-lg hover:bg-gray-50">
-                                <i class="fa fa-chevron-left"></i>
-                            </a>
-                        <?php endif; ?>
-                        
-                        <?php for ($i = max(1, $page - 2); $i <= min($total_pages, $page + 2); $i++): ?>
-                            <a href="?page=<?php echo $i; ?>#records" class="px-3 py-2 text-sm <?php echo $i == $page ? 'bg-blue-500 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'; ?> border border-gray-300 rounded-lg">
-                                <?php echo $i; ?>
-                            </a>
-                        <?php endfor; ?>
-                        
-                        <?php if ($page < $total_pages): ?>
-                            <a href="?page=<?php echo $page + 1; ?>#records" class="px-3 py-2 text-sm bg-white border border-gray-300 rounded-lg hover:bg-gray-50">
-                                <i class="fa fa-chevron-right"></i>
-                            </a>
-                        <?php endif; ?>
-                    </nav>
+                <div id="lottery-records-pagination">
+                    <?php if ($total_pages > 1): ?>
+                    <div class="flex justify-center mt-6">
+                        <nav class="flex space-x-2">
+                            <?php if ($page > 1): ?>
+                                <a href="?page=<?php echo $page - 1; ?>#records" class="px-3 py-2 text-sm bg-white border border-gray-300 rounded-lg hover:bg-gray-50">
+                                    <i class="fa fa-chevron-left"></i>
+                                </a>
+                            <?php endif; ?>
+                            
+                            <?php for ($i = max(1, $page - 2); $i <= min($total_pages, $page + 2); $i++): ?>
+                                <a href="?page=<?php echo $i; ?>#records" class="px-3 py-2 text-sm <?php echo $i == $page ? 'bg-blue-500 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'; ?> border border-gray-300 rounded-lg">
+                                    <?php echo $i; ?>
+                                </a>
+                            <?php endfor; ?>
+                            
+                            <?php if ($page < $total_pages): ?>
+                                <a href="?page=<?php echo $page + 1; ?>#records" class="px-3 py-2 text-sm bg-white border border-gray-300 rounded-lg hover:bg-gray-50">
+                                    <i class="fa fa-chevron-right"></i>
+                                </a>
+                            <?php endif; ?>
+                        </nav>
+                    </div>
+                    <?php endif; ?>
                 </div>
-                <?php endif; ?>
             </div>
         </div>
     </div>
@@ -650,7 +756,7 @@ $lottery_records = $records_stmt->fetchAll();
                         取消
                     </button>
                     <button type="submit" class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600">
-                        更新
+                        增加
                     </button>
                 </div>
             </form>
@@ -752,7 +858,14 @@ $lottery_records = $records_stmt->fetchAll();
                     <label class="block text-sm font-medium text-gray-700 mb-2">用户姓名</label>
                     <input type="text" name="name" id="edit-user-name" class="w-full border border-gray-300 rounded-lg px-3 py-2" required>
                 </div>
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">IP地址</label>
+                    <input type="text" name="ip" id="edit-user-ip" class="w-full border border-gray-300 rounded-lg px-3 py-2" required>
+                </div>
                 <div class="flex justify-end space-x-3">
+                    <button type="button" onclick="saveScrollPosition(); location.reload();" class="px-4 py-2 text-blue-600 border border-blue-300 rounded-lg hover:bg-blue-50">
+                        刷新
+                    </button>
                     <button type="button" onclick="hideModal('edit-user-modal')" class="px-4 py-2 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50">
                         取消
                     </button>
@@ -767,7 +880,7 @@ $lottery_records = $records_stmt->fetchAll();
     <!-- 设置抽奖次数模态框 -->
     <div id="set-times-modal" class="modal fixed inset-0 bg-gray-600 bg-opacity-50 hidden flex items-center justify-center">
         <div class="bg-white rounded-lg p-6 w-full max-w-md">
-            <h3 class="text-lg font-bold mb-4">设置抽奖次数</h3>
+            <h3 class="text-lg font-bold mb-4">增加抽奖次数</h3>
             <form method="POST" action="?action=set_user_times">
                 <input type="hidden" name="project_id" value="<?php echo $selected_project_id; ?>">
                 <div class="mb-4">
@@ -780,7 +893,7 @@ $lottery_records = $records_stmt->fetchAll();
                     </select>
                 </div>
                 <div class="mb-4">
-                    <label class="block text-sm font-medium text-gray-700 mb-2">抽奖次数</label>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">增加抽奖次数</label>
                     <input type="number" name="times" min="0" class="w-full border border-gray-300 rounded-lg px-3 py-2" required>
                 </div>
                 <div class="mb-4">
@@ -794,7 +907,7 @@ $lottery_records = $records_stmt->fetchAll();
                         取消
                     </button>
                     <button type="submit" class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600">
-                        设置
+                        增加
                     </button>
                 </div>
             </form>
@@ -804,13 +917,17 @@ $lottery_records = $records_stmt->fetchAll();
     <!-- 编辑用户次数模态框 -->
     <div id="edit-times-modal" class="modal fixed inset-0 bg-gray-600 bg-opacity-50 hidden flex items-center justify-center">
         <div class="bg-white rounded-lg p-6 w-full max-w-md">
-            <h3 class="text-lg font-bold mb-4">编辑抽奖次数</h3>
+            <h3 class="text-lg font-bold mb-4">增加抽奖次数</h3>
             <form method="POST" action="?action=set_user_times">
                 <input type="hidden" name="user_id" id="edit-times-user-id">
                 <input type="hidden" name="project_id" id="edit-times-project-id">
                 <div class="mb-4">
-                    <label class="block text-sm font-medium text-gray-700 mb-2">抽奖次数</label>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">增加抽奖次数</label>
                     <input type="number" name="times" id="edit-times-times" min="0" class="w-full border border-gray-300 rounded-lg px-3 py-2" required>
+                </div>
+                <div class="mb-4 flex space-x-2">
+                    <button type="button" onclick="incrementTimes('edit-times-times', 1)" class="px-3 py-1 text-sm text-blue-600 border border-blue-300 rounded hover:bg-blue-50">+1</button>
+                    <button type="button" onclick="incrementTimes('edit-times-times', 3)" class="px-3 py-1 text-sm text-blue-600 border border-blue-300 rounded hover:bg-blue-50">+3</button>
                 </div>
                 <div class="mb-4">
                     <label class="flex items-center">
@@ -823,7 +940,7 @@ $lottery_records = $records_stmt->fetchAll();
                         取消
                     </button>
                     <button type="submit" class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600">
-                        更新
+                        增加
                     </button>
                 </div>
             </form>
@@ -861,6 +978,56 @@ $lottery_records = $records_stmt->fetchAll();
         activeTab.classList.add('border-blue-500', 'text-blue-600');
     }
 
+    function saveScrollPosition() {
+        sessionStorage.setItem('admin1_scroll_y', String(window.scrollY));
+        sessionStorage.setItem('admin1_scroll_hash', window.location.hash || '');
+    }
+
+    function restoreScrollPosition() {
+        const savedY = sessionStorage.getItem('admin1_scroll_y');
+        if (savedY !== null) {
+            const y = parseInt(savedY, 10);
+            if (!Number.isNaN(y)) {
+                window.scrollTo(0, y);
+            }
+            sessionStorage.removeItem('admin1_scroll_y');
+            sessionStorage.removeItem('admin1_scroll_hash');
+        }
+    }
+
+    function refreshLotteryRecords() {
+        const formData = new FormData();
+        formData.append('action', 'get_records');
+        formData.append('page', '<?php echo (int)$page; ?>');
+
+        fetch(window.location.href, {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (!data.success) {
+                alert('刷新失败：' + (data.message || '未知错误'));
+                return;
+            }
+            const tbody = document.getElementById('lottery-records-body');
+            const pagination = document.getElementById('lottery-records-pagination');
+            const totalCount = document.getElementById('total-records-count');
+            if (tbody) {
+                tbody.innerHTML = data.rows_html || '';
+            }
+            if (pagination) {
+                pagination.innerHTML = data.pagination_html || '';
+            }
+            if (totalCount) {
+                totalCount.textContent = data.total_records;
+            }
+        })
+        .catch(() => {
+            alert('刷新失败，请重试');
+        });
+    }
+
     // 模态框控制
     function showModal(modalId) {
         document.getElementById(modalId).classList.remove('hidden');
@@ -868,6 +1035,13 @@ $lottery_records = $records_stmt->fetchAll();
 
     function hideModal(modalId) {
         document.getElementById(modalId).classList.add('hidden');
+    }
+
+    function incrementTimes(inputId, delta) {
+        const input = document.getElementById(inputId);
+        const current = parseInt(input.value || '0', 10);
+        input.value = Math.max(0, (Number.isNaN(current) ? 0 : current) + delta);
+        input.focus();
     }
 
     // 编辑项目
@@ -880,6 +1054,7 @@ $lottery_records = $records_stmt->fetchAll();
     // 删除项目
     function deleteProject(id) {
         if (confirm('确定要删除这个项目吗？删除后相关的奖品和记录也会被删除。')) {
+            saveScrollPosition();
             const form = document.createElement('form');
             form.method = 'POST';
             form.action = '?action=delete_project';
@@ -907,6 +1082,7 @@ $lottery_records = $records_stmt->fetchAll();
     // 删除奖品
     function deletePrize(id) {
         if (confirm('确定要删除这个奖品吗？')) {
+            saveScrollPosition();
             const form = document.createElement('form');
             form.method = 'POST';
             form.action = '?action=delete_prize';
@@ -923,15 +1099,17 @@ $lottery_records = $records_stmt->fetchAll();
     }
 
     // 编辑用户
-    function editUser(id, name) {
+    function editUser(id, name, ip) {
         document.getElementById('edit-user-id').value = id;
         document.getElementById('edit-user-name').value = name;
+        document.getElementById('edit-user-ip').value = ip;
         showModal('edit-user-modal');
     }
 
     // 删除用户
     function deleteUser(id) {
         if (confirm('确定要删除这个用户吗？删除后相关的抽奖记录也会被删除。')) {
+            saveScrollPosition();
             const form = document.createElement('form');
             form.method = 'POST';
             form.action = '?action=delete_user';
@@ -951,17 +1129,20 @@ $lottery_records = $records_stmt->fetchAll();
     function editUserTimes(userId, projectId, times, isVisible) {
         document.getElementById('edit-times-user-id').value = userId;
         document.getElementById('edit-times-project-id').value = projectId;
-        document.getElementById('edit-times-times').value = times;
+        document.getElementById('edit-times-times').value = 0;
         document.getElementById('edit-times-visible').checked = isVisible == 1;
         showModal('edit-times-modal');
     }
 
-    // 根据URL hash显示对应标签
     window.addEventListener('load', function() {
         const hash = window.location.hash.substring(1);
         if (hash && ['projects', 'prizes', 'users', 'user-times', 'records'].includes(hash)) {
             showTab(hash);
         }
+        document.querySelectorAll('form').forEach(form => {
+            form.addEventListener('submit', saveScrollPosition);
+        });
+        requestAnimationFrame(restoreScrollPosition);
     });
     </script>
 </body>
