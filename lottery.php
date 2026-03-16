@@ -5,6 +5,7 @@ header('Content-Type: application/json');
 
 // 只接受POST请求
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    logUserAction('lottery', '失败', '请求方法不允许');
     http_response_code(405);
     echo json_encode(['success' => false, 'message' => '请求方法不允许']);
     exit;
@@ -13,6 +14,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 // 获取请求数据
 $input = json_decode(file_get_contents('php://input'), true);
 if (!$input || !isset($input['project_id'])) {
+    logUserAction('lottery', '失败', '参数错误');
     echo json_encode(['success' => false, 'message' => '参数错误']);
     exit;
 }
@@ -23,6 +25,7 @@ $user = checkUser($pdo, $user_ip);
 
 // 检查用户是否存在
 if (!$user) {
+    logUserAction('lottery', '失败', '用户不存在');
     echo json_encode(['success' => false, 'message' => '用户不存在，请先注册']);
     exit;
 }
@@ -93,6 +96,12 @@ try {
     $stmt->execute([$user['id'], $project_id, $prize_id_to_record, $user_ip]);
     
     $pdo->commit();
+    logUserAction('lottery', '成功', [
+        'user_id' => $user['id'],
+        'project_id' => $project_id,
+        'prize_id' => $prize_id_to_record,
+        'remaining_times' => $user_project['remaining_times'] - 1
+    ]);
     
     // 返回结果（如果是"没有中奖"奖品，返回null）
     $response = [
@@ -109,9 +118,11 @@ try {
     
 } catch (Exception $e) {
     $pdo->rollBack();
+    logUserAction('lottery', '失败', ['user_id' => $user['id'], 'project_id' => $project_id, 'message' => $e->getMessage()]);
     echo json_encode(['success' => false, 'message' => $e->getMessage()]);
 } catch (PDOException $e) {
     $pdo->rollBack();
+    logUserAction('lottery', '失败', ['user_id' => $user['id'], 'project_id' => $project_id, 'message' => '数据库错误']);
     echo json_encode(['success' => false, 'message' => '数据库错误，请重试']);
 }
 ?>

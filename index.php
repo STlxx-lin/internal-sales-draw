@@ -6,6 +6,7 @@ $user = checkUser($pdo, $user_ip);
 
 // 如果用户不存在，重定向到用户注册页面
 if (!$user) {
+    logUserAction('index_redirect_register', '成功', '未找到用户，跳转注册页');
     header('Location: register.php');
     exit;
 }
@@ -51,6 +52,7 @@ $stmt = $pdo->prepare("
 ");
 $stmt->execute([$user['id']]);
 $recent_records = $stmt->fetchAll();
+logUserAction('index_view', '成功', ['user_id' => $user['id'], 'project_id' => $current_project_id, 'remaining_times' => $remaining_times, 'visible' => $user_project ? 1 : 0]);
 ?>
 <!DOCTYPE html>
 <html lang="zh-CN">

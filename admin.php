@@ -5,12 +5,29 @@ require_once 'config.php';
 // 管理员密码（实际使用时应该存储在数据库中并加密）
 define('ADMIN_PASSWORD', 'admin123');
 
+$admin_log_dir = __DIR__ . '/uploads';
+if (!is_dir($admin_log_dir)) {
+    mkdir($admin_log_dir, 0755, true);
+}
+$admin_log_file = $admin_log_dir . '/admin_actions.log';
+
+function logAdminAction($action, $status, $detail, $log_file) {
+    $time = date('Y-m-d H:i:s');
+    $ip = $_SERVER['REMOTE_ADDR'] ?? '';
+    $user = isset($_SESSION['admin_logged_in']) && $_SESSION['admin_logged_in'] === true ? 'admin' : 'guest';
+    $detail_text = is_array($detail) ? json_encode($detail, JSON_UNESCAPED_UNICODE) : (string)$detail;
+    $detail_text = str_replace(["\r", "\n"], ' ', $detail_text);
+    $line = $time . "\t" . $ip . "\t" . $user . "\t" . $action . "\t" . $status . "\t" . $detail_text . PHP_EOL;
+    @file_put_contents($log_file, $line, FILE_APPEND | LOCK_EX);
+}
+
 // 检查登录状态
 if (!isset($_SESSION['admin_logged_in']) || $_SESSION['admin_logged_in'] !== true) {
     // 处理登录
     if ($_POST && isset($_POST['password'])) {
         if ($_POST['password'] === ADMIN_PASSWORD) {
             $_SESSION['admin_logged_in'] = true;
+            logAdminAction('login', '成功', '管理员登录成功', $admin_log_file);
             
             // 如果是AJAX请求，返回JSON响应而不是重定向
             if (isset($_POST['action']) || (isset($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) == 'xmlhttprequest')) {
@@ -23,6 +40,7 @@ if (!isset($_SESSION['admin_logged_in']) || $_SESSION['admin_logged_in'] !== tru
             exit;
         } else {
             $login_error = '密码错误';
+            logAdminAction('login', '失败', '管理员密码错误', $admin_log_file);
             
             // 如果是AJAX请求，返回JSON错误响应
             if (isset($_POST['action']) || (isset($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) == 'xmlhttprequest')) {
@@ -90,6 +108,7 @@ $action = $_POST['action'] ?? $_GET['action'] ?? '';
 
 // 处理退出登录
 if ($action === 'logout') {
+    logAdminAction('logout', '成功', '管理员退出登录', $admin_log_file);
     session_destroy();
     header('Location: admin.php');
     exit;
@@ -107,6 +126,7 @@ if ($_POST) {
                 }
                 $stmt = $pdo->prepare("INSERT INTO projects (name) VALUES (?)");
                 $stmt->execute([$name]);
+                logAdminAction('add_project', '成功', ['name' => $name], $admin_log_file);
                 header('Location: admin.php#projects');
                 exit;
                 break;
@@ -119,6 +139,7 @@ if ($_POST) {
                 }
                 $stmt = $pdo->prepare("UPDATE projects SET name = ? WHERE id = ?");
                 $stmt->execute([$name, $id]);
+                logAdminAction('edit_project', '成功', ['id' => $id, 'name' => $name], $admin_log_file);
                 header('Location: admin.php#projects');
                 exit;
                 break;
@@ -127,6 +148,7 @@ if ($_POST) {
                 $id = (int)$_POST['id'];
                 $stmt = $pdo->prepare("DELETE FROM projects WHERE id = ?");
                 $stmt->execute([$id]);
+                logAdminAction('delete_project', '成功', ['id' => $id], $admin_log_file);
                 header('Location: admin.php#projects');
                 exit;
                 break;
@@ -150,6 +172,7 @@ if ($_POST) {
                 
                 $stmt = $pdo->prepare("INSERT INTO prizes (project_id, name, total_quantity, remaining_quantity, probability) VALUES (?, ?, ?, ?, ?)");
                 $stmt->execute([$project_id, $name, $quantity, $quantity, $probability]);
+                logAdminAction('add_prize', '成功', ['project_id' => $project_id, 'name' => $name, 'quantity' => $quantity, 'probability' => $probability], $admin_log_file);
                 header('Location: admin.php?project_id=' . $project_id . '#prizes');
                 exit;
                 break;
@@ -179,6 +202,7 @@ if ($_POST) {
                 
                 $stmt = $pdo->prepare("UPDATE prizes SET name = ?, remaining_quantity = ?, probability = ? WHERE id = ?");
                 $stmt->execute([$name, $quantity, $probability, $id]);
+                logAdminAction('edit_prize', '成功', ['id' => $id, 'project_id' => $project_id, 'name' => $name, 'quantity' => $quantity, 'probability' => $probability], $admin_log_file);
                 header('Location: admin.php?project_id=' . $project_id . '#prizes');
                 exit;
                 break;
@@ -188,6 +212,7 @@ if ($_POST) {
                 $project_id = $_GET['project_id'] ?? 0;
                 $stmt = $pdo->prepare("DELETE FROM prizes WHERE id = ?");
                 $stmt->execute([$id]);
+                logAdminAction('delete_prize', '成功', ['id' => $id, 'project_id' => $project_id], $admin_log_file);
                 header('Location: admin.php?project_id=' . $project_id . '#prizes');
                 exit;
                 break;
@@ -205,6 +230,7 @@ if ($_POST) {
                 
                 $stmt = $pdo->prepare("INSERT INTO users (name, ip_address) VALUES (?, ?)");
                 $stmt->execute([$name, $ip]);
+                logAdminAction('add_user', '成功', ['name' => $name, 'ip_address' => $ip], $admin_log_file);
                 header('Location: admin.php#users');
                 exit;
                 break;
@@ -223,6 +249,7 @@ if ($_POST) {
                 
                 $stmt = $pdo->prepare("UPDATE users SET name = ?, ip_address = ? WHERE id = ?");
                 $stmt->execute([$name, $ip, $id]);
+                logAdminAction('edit_user', '成功', ['id' => $id, 'name' => $name, 'ip_address' => $ip], $admin_log_file);
                 header('Location: admin.php#users');
                 exit;
                 break;
@@ -231,7 +258,223 @@ if ($_POST) {
                 $id = (int)$_POST['id'];
                 $stmt = $pdo->prepare("DELETE FROM users WHERE id = ?");
                 $stmt->execute([$id]);
+                logAdminAction('delete_user', '成功', ['id' => $id], $admin_log_file);
                 header('Location: admin.php#users');
+                exit;
+                break;
+                
+            case 'get_user_detail':
+                $user_id = (int)($_POST['user_id'] ?? 0);
+                if (!$user_id) {
+                    throw new Exception('用户ID不能为空');
+                }
+                
+                $stmt = $pdo->prepare("SELECT id, name, ip_address, created_at FROM users WHERE id = ?");
+                $stmt->execute([$user_id]);
+                $user = $stmt->fetch();
+                if (!$user) {
+                    throw new Exception('用户不存在');
+                }
+                
+                $stmt = $pdo->prepare("
+                    SELECT upt.*, pr.name as project_name
+                    FROM user_project_times upt
+                    JOIN projects pr ON upt.project_id = pr.id
+                    WHERE upt.user_id = ?
+                    ORDER BY pr.name
+                ");
+                $stmt->execute([$user_id]);
+                $times_list = $stmt->fetchAll();
+                
+                $stmt = $pdo->prepare("
+                    SELECT lr.created_at, pr.name as project_name, p.name as prize_name
+                    FROM lottery_records lr
+                    JOIN projects pr ON lr.project_id = pr.id
+                    LEFT JOIN prizes p ON lr.prize_id = p.id
+                    WHERE lr.user_id = ?
+                    ORDER BY lr.created_at DESC
+                    LIMIT 50
+                ");
+                $stmt->execute([$user_id]);
+                $record_list = $stmt->fetchAll();
+
+                $project_name_map = [];
+                $project_rows = $pdo->query("SELECT id, name FROM projects")->fetchAll();
+                foreach ($project_rows as $project_row) {
+                    $project_name_map[(int)$project_row['id']] = $project_row['name'];
+                }
+
+                $times_records = [];
+                if (is_file($admin_log_file)) {
+                    $lines = file($admin_log_file, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+                    $lines = array_slice($lines, -2000);
+                    $lines = array_reverse($lines);
+                    foreach ($lines as $line) {
+                        $parts = explode("\t", $line);
+                        if (count($parts) < 6) {
+                            continue;
+                        }
+                        $log_time = $parts[0];
+                        $log_ip = $parts[1];
+                        $log_action = $parts[3];
+                        $log_status = $parts[4];
+                        $detail_text = $parts[5];
+                        if (!in_array($log_action, ['set_user_times', 'batch_set_user_times'], true)) {
+                            continue;
+                        }
+                        $detail = json_decode($detail_text, true);
+                        if (!is_array($detail)) {
+                            continue;
+                        }
+                        $match = false;
+                        if ($log_action === 'set_user_times' && (int)($detail['user_id'] ?? 0) === $user_id) {
+                            $match = true;
+                        }
+                        if ($log_action === 'batch_set_user_times') {
+                            $detail_user_ids = $detail['user_ids'] ?? [];
+                            if (is_array($detail_user_ids) && in_array($user_id, $detail_user_ids, true)) {
+                                $match = true;
+                            }
+                        }
+                        if (!$match) {
+                            continue;
+                        }
+                        $project_id = (int)($detail['project_id'] ?? 0);
+                        $times_records[] = [
+                            'time' => $log_time,
+                            'ip' => $log_ip,
+                            'project_name' => $project_name_map[$project_id] ?? ('项目' . $project_id),
+                            'times' => (int)($detail['times'] ?? 0),
+                            'status' => $log_status,
+                            'action' => $log_action === 'set_user_times' ? '单人分配' : '批量分配'
+                        ];
+                        if (count($times_records) >= 50) {
+                            break;
+                        }
+                    }
+                }
+                
+                ob_start();
+                ?>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div class="p-4 bg-gray-50 rounded-lg">
+                        <div class="text-xs text-gray-500">姓名</div>
+                        <div class="text-base font-semibold text-gray-800"><?php echo htmlspecialchars($user['name']); ?></div>
+                    </div>
+                    <div class="p-4 bg-gray-50 rounded-lg">
+                        <div class="text-xs text-gray-500">IP地址</div>
+                        <div class="text-base font-semibold text-gray-800"><?php echo htmlspecialchars($user['ip_address']); ?></div>
+                    </div>
+                    <div class="p-4 bg-gray-50 rounded-lg">
+                        <div class="text-xs text-gray-500">注册时间</div>
+                        <div class="text-base font-semibold text-gray-800"><?php echo date('Y-m-d H:i', strtotime($user['created_at'])); ?></div>
+                    </div>
+                </div>
+                <div>
+                    <div class="text-sm font-semibold text-gray-700 mb-2">次数分配</div>
+                    <div class="overflow-x-auto border border-gray-200 rounded-lg">
+                        <table class="w-full text-sm text-left">
+                            <thead class="text-xs text-gray-700 uppercase bg-gray-50">
+                                <tr>
+                                    <th class="px-4 py-2">项目</th>
+                                    <th class="px-4 py-2">总次数</th>
+                                    <th class="px-4 py-2">剩余次数</th>
+                                    <th class="px-4 py-2">是否显示</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php if (empty($times_list)): ?>
+                                <tr>
+                                    <td colspan="4" class="px-4 py-6 text-center text-gray-500">暂无次数分配记录</td>
+                                </tr>
+                                <?php else: ?>
+                                <?php foreach ($times_list as $times_row): ?>
+                                <tr class="bg-white border-b">
+                                    <td class="px-4 py-2"><?php echo htmlspecialchars($times_row['project_name']); ?></td>
+                                    <td class="px-4 py-2"><?php echo $times_row['total_times']; ?></td>
+                                    <td class="px-4 py-2"><?php echo $times_row['remaining_times']; ?></td>
+                                    <td class="px-4 py-2"><?php echo $times_row['is_visible'] ? '显示' : '隐藏'; ?></td>
+                                </tr>
+                                <?php endforeach; ?>
+                                <?php endif; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <div>
+                    <div class="text-sm font-semibold text-gray-700 mb-2">次数分配记录（最近50条）</div>
+                    <div class="overflow-x-auto border border-gray-200 rounded-lg">
+                        <table class="w-full text-sm text-left">
+                            <thead class="text-xs text-gray-700 uppercase bg-gray-50">
+                                <tr>
+                                    <th class="px-4 py-2">时间</th>
+                                    <th class="px-4 py-2">操作IP</th>
+                                    <th class="px-4 py-2">项目</th>
+                                    <th class="px-4 py-2">变更次数</th>
+                                    <th class="px-4 py-2">方式</th>
+                                    <th class="px-4 py-2">状态</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php if (empty($times_records)): ?>
+                                <tr>
+                                    <td colspan="6" class="px-4 py-6 text-center text-gray-500">暂无次数分配记录</td>
+                                </tr>
+                                <?php else: ?>
+                                <?php foreach ($times_records as $times_record): ?>
+                                <tr class="bg-white border-b">
+                                    <td class="px-4 py-2"><?php echo htmlspecialchars($times_record['time']); ?></td>
+                                    <td class="px-4 py-2"><?php echo htmlspecialchars($times_record['ip']); ?></td>
+                                    <td class="px-4 py-2"><?php echo htmlspecialchars($times_record['project_name']); ?></td>
+                                    <td class="px-4 py-2"><?php echo $times_record['times']; ?></td>
+                                    <td class="px-4 py-2"><?php echo htmlspecialchars($times_record['action']); ?></td>
+                                    <td class="px-4 py-2"><?php echo htmlspecialchars($times_record['status']); ?></td>
+                                </tr>
+                                <?php endforeach; ?>
+                                <?php endif; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <div>
+                    <div class="text-sm font-semibold text-gray-700 mb-2">抽奖记录（最近50条）</div>
+                    <div class="overflow-x-auto border border-gray-200 rounded-lg">
+                        <table class="w-full text-sm text-left">
+                            <thead class="text-xs text-gray-700 uppercase bg-gray-50">
+                                <tr>
+                                    <th class="px-4 py-2">时间</th>
+                                    <th class="px-4 py-2">项目</th>
+                                    <th class="px-4 py-2">奖品</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php if (empty($record_list)): ?>
+                                <tr>
+                                    <td colspan="3" class="px-4 py-6 text-center text-gray-500">暂无抽奖记录</td>
+                                </tr>
+                                <?php else: ?>
+                                <?php foreach ($record_list as $record): ?>
+                                <tr class="bg-white border-b">
+                                    <td class="px-4 py-2"><?php echo date('Y-m-d H:i', strtotime($record['created_at'])); ?></td>
+                                    <td class="px-4 py-2"><?php echo htmlspecialchars($record['project_name']); ?></td>
+                                    <td class="px-4 py-2"><?php echo htmlspecialchars($record['prize_name'] ?? '未中奖'); ?></td>
+                                </tr>
+                                <?php endforeach; ?>
+                                <?php endif; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <?php
+                $detail_html = ob_get_clean();
+                
+                header('Content-Type: application/json');
+                echo json_encode([
+                    'success' => true,
+                    'title' => $user['name'] . ' 详情',
+                    'html' => $detail_html
+                ]);
+                logAdminAction('get_user_detail', '成功', ['user_id' => $user_id], $admin_log_file);
                 exit;
                 break;
                 
@@ -256,7 +499,7 @@ if ($_POST) {
                     $stmt = $pdo->prepare("INSERT INTO user_project_times (user_id, project_id, total_times, remaining_times, is_visible) VALUES (?, ?, ?, ?, ?)");
                     $stmt->execute([$user_id, $project_id, $init_total, $init_remaining, $is_visible]);
                 }
-                
+                logAdminAction('set_user_times', '成功', ['user_id' => $user_id, 'project_id' => $project_id, 'times' => $times, 'is_visible' => $is_visible], $admin_log_file);
                 header('Location: admin.php?project_id=' . $project_id . '#user-times');
                 exit;
                 break;
@@ -298,6 +541,7 @@ if ($_POST) {
                     }
                     
                     $pdo->commit();
+                    logAdminAction('batch_set_user_times', '成功', ['project_id' => $project_id, 'times' => $times, 'is_visible' => $is_visible, 'count' => $success_count, 'user_ids' => array_values(array_map('intval', $user_ids))], $admin_log_file);
                     header('Location: admin.php?project_id=' . $project_id . '#user-times');
                     exit;
                 } catch (Exception $e) {
@@ -361,6 +605,7 @@ if ($_POST) {
                     'success' => true,
                     'rows_html' => $rows_html
                 ]);
+                logAdminAction('get_user_times', '成功', ['project_id' => $project_id], $admin_log_file);
                 exit;
                 break;
                 
@@ -479,6 +724,7 @@ if ($_POST) {
                     'rows_html' => $rows_html,
                     'pagination_html' => $pagination_html
                 ]);
+                logAdminAction('get_records', '成功', ['page' => $page, 'keyword' => $keyword], $admin_log_file);
                 exit;
                 break;
                 
@@ -526,6 +772,7 @@ if ($_POST) {
                         // 返回成功的JSON响应
                         header('Content-Type: application/json');
                         echo json_encode(['success' => true, 'message' => '概率更新成功']);
+                        logAdminAction('update_probabilities', '成功', ['project_id' => $project_id], $admin_log_file);
                         exit;
                         
                     } catch (Exception $e) {
@@ -537,11 +784,13 @@ if ($_POST) {
                     // 返回错误的JSON响应
                     header('Content-Type: application/json');
                     echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+                    logAdminAction('update_probabilities', '失败', $e->getMessage(), $admin_log_file);
                     exit;
                 } catch (PDOException $e) {
                     // 返回数据库错误的JSON响应
                     header('Content-Type: application/json');
                     echo json_encode(['success' => false, 'message' => '数据库操作失败：' . $e->getMessage()]);
+                    logAdminAction('update_probabilities', '失败', '数据库操作失败：' . $e->getMessage(), $admin_log_file);
                     exit;
                 }
                 break;
@@ -569,19 +818,27 @@ if ($_POST) {
                         'prizes' => $prizes,
                         'total_probability' => number_format($total_probability, 2)
                     ]);
+                    logAdminAction('get_prizes_data', '成功', ['project_id' => $project_id], $admin_log_file);
                     exit;
                     
                 } catch (Exception $e) {
                     header('Content-Type: application/json');
                     echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+                    logAdminAction('get_prizes_data', '失败', $e->getMessage(), $admin_log_file);
                     exit;
                 }
                 break;
         }
     } catch (Exception $e) {
         $error = $e->getMessage();
+        if ($action !== '') {
+            logAdminAction($action, '失败', $error, $admin_log_file);
+        }
     } catch (PDOException $e) {
         $error = '数据库操作失败：' . $e->getMessage();
+        if ($action !== '') {
+            logAdminAction($action, '失败', $error, $admin_log_file);
+        }
     }
 }
 
@@ -847,6 +1104,9 @@ $lottery_records = $records_stmt->fetchAll();
                                 <td class="px-6 py-4"><?php echo htmlspecialchars($user['ip_address']); ?></td>
                                 <td class="px-6 py-4"><?php echo date('Y-m-d H:i', strtotime($user['created_at'])); ?></td>
                                 <td class="px-6 py-4">
+                                    <button onclick="showUserDetail(<?php echo $user['id']; ?>)" class="text-gray-600 hover:text-gray-900 mr-3">
+                                        <i class="fa fa-info-circle"></i>
+                                    </button>
                                     <button onclick="editUser(<?php echo $user['id']; ?>, '<?php echo htmlspecialchars($user['name'], ENT_QUOTES); ?>', '<?php echo htmlspecialchars($user['ip_address'], ENT_QUOTES); ?>')" class="text-blue-600 hover:text-blue-900 mr-3">
                                         <i class="fa fa-edit"></i>
                                     </button>
@@ -1207,6 +1467,23 @@ $lottery_records = $records_stmt->fetchAll();
                     </button>
                 </div>
             </form>
+        </div>
+    </div>
+
+    <div id="user-detail-modal" class="modal fixed inset-0 bg-gray-600 bg-opacity-50 hidden flex items-center justify-center">
+        <div class="bg-white rounded-lg p-6 w-full max-w-4xl max-h-[85vh] overflow-y-auto">
+            <div class="flex items-center justify-between mb-4">
+                <h3 id="user-detail-title" class="text-lg font-bold text-gray-800">用户详情</h3>
+                <button type="button" onclick="hideModal('user-detail-modal')" class="text-gray-500 hover:text-gray-700">
+                    <i class="fa fa-times"></i>
+                </button>
+            </div>
+            <div id="user-detail-body" class="space-y-4 text-sm"></div>
+            <div class="flex justify-end mt-4">
+                <button type="button" onclick="hideModal('user-detail-modal')" class="px-4 py-2 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50">
+                    关闭
+                </button>
+            </div>
         </div>
     </div>
 
@@ -1754,6 +2031,41 @@ $lottery_records = $records_stmt->fetchAll();
             document.body.appendChild(form);
             form.submit();
         }
+    }
+
+    function showUserDetail(userId) {
+        const title = document.getElementById('user-detail-title');
+        const body = document.getElementById('user-detail-body');
+        if (title) {
+            title.textContent = '用户详情';
+        }
+        if (body) {
+            body.innerHTML = '<div class="py-6 text-center text-gray-500">加载中...</div>';
+        }
+        const formData = new FormData();
+        formData.append('action', 'get_user_detail');
+        formData.append('user_id', String(userId));
+        fetch(window.location.href, {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (!data.success) {
+                alert('获取失败：' + (data.message || '未知错误'));
+                return;
+            }
+            if (title) {
+                title.textContent = data.title || '用户详情';
+            }
+            if (body) {
+                body.innerHTML = data.html || '';
+            }
+            showModal('user-detail-modal');
+        })
+        .catch(() => {
+            alert('获取失败，请重试');
+        });
     }
 
     // 编辑用户

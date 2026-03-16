@@ -6,6 +6,7 @@ $user = checkUser($pdo, $user_ip);
 
 // 如果用户已存在，重定向到首页
 if ($user) {
+    logUserAction('register_redirect', '成功', 'IP已注册，自动跳转首页');
     header('Location: index.php');
     exit;
 }
@@ -13,18 +14,25 @@ if ($user) {
 $error = '';
 $success = '';
 
+if (!$_POST) {
+    logUserAction('register_view', '成功', ['ip_address' => $user_ip]);
+}
+
 if ($_POST) {
     $name = trim($_POST['name'] ?? '');
     
     if (empty($name)) {
         $error = '请输入您的姓名';
+        logUserAction('register', '失败', '姓名为空');
     } elseif (strlen($name) < 2) {
         $error = '姓名至少需要2个字符';
+        logUserAction('register', '失败', '姓名长度不足');
     } else {
         try {
             // 创建用户
             $stmt = $pdo->prepare("INSERT INTO users (name, ip_address) VALUES (?, ?)");
             $stmt->execute([$name, $user_ip]);
+            logUserAction('register', '成功', ['name' => $name, 'ip_address' => $user_ip]);
             
             $success = '注册成功！正在跳转到抽奖页面...';
             
@@ -33,8 +41,10 @@ if ($_POST) {
         } catch (PDOException $e) {
             if ($e->getCode() == 23000) { // 重复键错误
                 $error = '该IP地址已经注册过了';
+                logUserAction('register', '失败', 'IP已注册');
             } else {
                 $error = '注册失败，请重试';
+                logUserAction('register', '失败', '数据库错误：' . $e->getMessage());
             }
         }
     }

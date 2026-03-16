@@ -1,0 +1,14 @@
+2026-03-16 02:58:54	::1	admin	login	成功	管理员登录成功
+2026-03-16 02:59:23	::1	admin	set_user_times	成功	{"user_id":26,"project_id":4,"times":3,"is_visible":1}
+2026-03-16 05:49:35	::1	admin	get_user_detail	成功	{"user_id":27}
+2026-03-16 05:50:13	::1	admin	login	成功	管理员登录成功
+2026-03-16 05:50:17	::1	admin	get_user_detail	成功	{"user_id":26}
+2026-03-16 05:51:13	::1	admin	get_user_detail	成功	{"user_id":27}
+2026-03-16 05:54:40	::1	admin	get_user_detail	成功	{"user_id":27}
+2026-03-16 06:11:55	::1	admin	get_user_detail	成功	{"user_id":27}
+2026-03-16 06:12:12	::1	admin	set_user_times	成功	{"user_id":26,"project_id":4,"times":1,"is_visible":1}
+2026-03-16 06:12:17	::1	admin	get_user_detail	成功	{"user_id":27}
+2026-03-16 06:12:22	::1	admin	get_user_detail	成功	{"user_id":26}
+2026-03-16 06:35:48	::1	admin	get_user_detail	成功	{"user_id":26}
+2026-03-16 06:53:37	::1	admin	get_user_detail	成功	{"user_id":25}
+2026-03-16 06:53:40	::1	admin	get_user_detail	成功	{"user_id":26}

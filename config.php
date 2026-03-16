@@ -44,4 +44,22 @@ function getUserRemainingTimes($pdo, $user_id, $project_id) {
     $result = $stmt->fetch();
     return $result ? $result['remaining_times'] : 0;
 }
+
+function getUserLogFile() {
+    $log_dir = __DIR__ . '/' . trim(UPLOAD_PATH, '/');
+    if (!is_dir($log_dir)) {
+        mkdir($log_dir, 0755, true);
+    }
+    return $log_dir . '/user_actions.log';
+}
+
+function logUserAction($action, $status, $detail) {
+    $log_file = getUserLogFile();
+    $time = date('Y-m-d H:i:s');
+    $ip = $_SERVER['REMOTE_ADDR'] ?? '';
+    $detail_text = is_array($detail) ? json_encode($detail, JSON_UNESCAPED_UNICODE) : (string)$detail;
+    $detail_text = str_replace(["\r", "\n"], ' ', $detail_text);
+    $line = $time . "\t" . $ip . "\t" . $action . "\t" . $status . "\t" . $detail_text . PHP_EOL;
+    @file_put_contents($log_file, $line, FILE_APPEND | LOCK_EX);
+}
 ?>

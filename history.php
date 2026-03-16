@@ -6,6 +6,7 @@ $user = checkUser($pdo, $user_ip);
 
 // 如果用户不存在，重定向到用户注册页面
 if (!$user) {
+    logUserAction('history_redirect_register', '成功', '未找到用户，跳转注册页');
     header('Location: register.php');
     exit;
 }
@@ -60,6 +61,7 @@ $sql = "
 $stmt = $pdo->prepare($sql);
 $stmt->execute($params);
 $records = $stmt->fetchAll();
+logUserAction('history_view', '成功', ['user_id' => $user['id'], 'page' => $page, 'project' => $project_filter, 'result' => $result_filter]);
 
 // 获取所有项目用于筛选
 $projects = $pdo->query("SELECT * FROM projects ORDER BY name")->fetchAll();
