@@ -13,3 +13,9 @@
 2026-03-16 06:53:37	::1	admin	get_user_detail	成功	{"user_id":25}
 2026-03-16 06:53:40	::1	admin	get_user_detail	成功	{"user_id":26}
 2026-04-27 01:46:32	::1	admin	login	成功	管理员登录成功
+2026-04-27 02:06:11	::1	admin	login	成功	管理员登录成功
+2026-04-27 02:19:08	::1	admin	login	成功	管理员登录成功
+2026-04-27 02:28:13	::1	admin	login	成功	管理员登录成功
+2026-04-27 02:46:18	::1	admin	get_user_detail	成功	{"user_id":27}
+2026-04-27 02:56:47	::1	admin	get_user_detail	成功	{"user_id":27}
+2026-04-27 03:28:37	::1	admin	get_user_detail	成功	{"user_id":26}

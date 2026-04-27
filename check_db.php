@@ -10,10 +10,10 @@ $required_tables = [
             `id` INT(11) NOT NULL AUTO_INCREMENT,
             `name` VARCHAR(100) NOT NULL COMMENT '部门名称',
             `description` TEXT NULL COMMENT '部门描述',
-            `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+            `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
             PRIMARY KEY (`id`)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='部门表'",
     ],
     'users' => [
         'desc' => '用户表',
@@ -34,7 +34,7 @@ $required_tables = [
         'sql' => "CREATE TABLE `projects` (
             `id` INT(11) NOT NULL AUTO_INCREMENT,
             `name` VARCHAR(200) NOT NULL COMMENT '项目名称',
-            `status` TINYINT(4) DEFAULT 1 COMMENT '1启用0禁用',
+            `status` TINYINT(4) DEFAULT 1 COMMENT '状态：1-启用，0-禁用',
             `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
             `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             PRIMARY KEY (`id`)
@@ -65,7 +65,7 @@ $required_tables = [
             `project_id` INT(11) NOT NULL COMMENT '项目ID',
             `total_times` INT(11) NOT NULL DEFAULT 0 COMMENT '总抽奖次数',
             `remaining_times` INT(11) NOT NULL DEFAULT 0 COMMENT '剩余抽奖次数',
-            `is_visible` TINYINT(4) DEFAULT 1 COMMENT '是否显示',
+            `is_visible` TINYINT(4) DEFAULT 1 COMMENT '是否在该项目中显示：1-显示，0-隐藏',
             `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
             `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             PRIMARY KEY (`id`),
@@ -79,8 +79,8 @@ $required_tables = [
             `id` INT(11) NOT NULL AUTO_INCREMENT,
             `user_id` INT(11) NOT NULL COMMENT '用户ID',
             `project_id` INT(11) NOT NULL COMMENT '项目ID',
-            `prize_id` INT(11) NULL COMMENT '奖品ID(NULL=未中奖)',
-            `ip_address` VARCHAR(45) NOT NULL COMMENT '抽奖IP',
+            `prize_id` INT(11) NULL COMMENT '中奖奖品ID，NULL表示未中奖',
+            `ip_address` VARCHAR(45) NOT NULL COMMENT '抽奖时的IP地址',
             `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (`id`),
             KEY `user_id` (`user_id`),
@@ -93,10 +93,11 @@ $required_tables = [
         'sql' => "CREATE TABLE `expense_records` (
             `id` INT(11) NOT NULL AUTO_INCREMENT,
             `project_id` INT(11) NOT NULL COMMENT '关联抽奖项目ID',
+            `user_id` INT(11) NULL COMMENT '关联用户ID',
             `expense_name` VARCHAR(200) NOT NULL COMMENT '报销活动名称',
             `amount` DECIMAL(10,2) NOT NULL DEFAULT 0.00 COMMENT '报销金额',
             `reason` TEXT NULL COMMENT '报销事由',
-            `status` ENUM('pending','approved','rejected') NOT NULL DEFAULT 'pending',
+            `status` ENUM('pending','approved','rejected') NOT NULL DEFAULT 'pending' COMMENT '报销状态',
             `applicant` VARCHAR(100) NOT NULL COMMENT '申请人',
             `approver` VARCHAR(100) NULL COMMENT '审批人',
             `applied_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '申请日期',
@@ -104,12 +105,13 @@ $required_tables = [
             `attachment` VARCHAR(500) NULL COMMENT '附件路径',
             `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
             `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            `is_used` TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否已使用',
             PRIMARY KEY (`id`),
             KEY `idx_project_id` (`project_id`),
             KEY `idx_status` (`status`),
             KEY `idx_applied_at` (`applied_at`),
             KEY `idx_amount` (`amount`)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='抽奖活动报销记录表'",
     ],
     'expense_edit_history' => [
         'desc' => '报销修改历史记录表',
@@ -118,12 +120,12 @@ $required_tables = [
             `expense_id` INT(11) NOT NULL COMMENT '关联报销记录ID',
             `editor` VARCHAR(100) NOT NULL COMMENT '编辑人',
             `edit_reason` VARCHAR(500) NULL COMMENT '修改原因',
-            `old_data` TEXT NULL COMMENT '修改前JSON',
-            `new_data` TEXT NULL COMMENT '修改后JSON',
+            `old_data` TEXT NULL COMMENT '修改前数据JSON',
+            `new_data` TEXT NULL COMMENT '修改后数据JSON',
             `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (`id`),
             KEY `idx_expense_id` (`expense_id`)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='报销修改历史记录表'",
     ],
 ];
 
@@ -196,7 +198,16 @@ if (!empty($_GET['ajax'])) {
 
         foreach ($required_tables as $tname => $tdef) {
             if (in_array($tname, $existing)) {
-                $steps[] = ['type' => 'ok', 'msg' => "表 [{$tname}] 已存在", 'table' => $tname, 'status' => 'exist'];
+                $existing_cols = $pdo->query("SHOW COLUMNS FROM `$tname`")->fetchAll(PDO::FETCH_COLUMN);
+                preg_match_all('/^\s*`([a-zA-Z0-9_]+)`/m', $tdef['sql'], $matches);
+                $expected_cols = $matches[1] ?? [];
+                $missing_cols = array_diff($expected_cols, $existing_cols);
+                
+                if (!empty($missing_cols)) {
+                    $steps[] = ['type' => 'warn', 'msg' => "表 [{$tname}] 存在缺失字段: " . implode(', ', $missing_cols), 'table' => $tname, 'status' => 'warn'];
+                } else {
+                    $steps[] = ['type' => 'ok', 'msg' => "表 [{$tname}] 正常", 'table' => $tname, 'status' => 'exist'];
+                }
                 $exist_count++;
             } else {
                 try {
@@ -247,10 +258,32 @@ if (!empty($_GET['ajax'])) {
                 } catch (PDOException $e) {
                     $steps[] = ['type' => 'fail', 'msg' => "表 [{$tname}] 修复失败: {$e->getMessage()}", 'table' => $tname, 'status' => 'failed'];
                 }
+            } else {
+                // 表已存在，检查字段
+                $existing_cols = $pdo->query("SHOW COLUMNS FROM `$tname`")->fetchAll(PDO::FETCH_COLUMN);
+                preg_match_all('/^\s*`([a-zA-Z0-9_]+)`\s+(.*?)(?:,|$)/m', $tdef['sql'], $matches, PREG_SET_ORDER);
+                
+                $col_defs = [];
+                foreach ($matches as $m) {
+                    $col_defs[$m[1]] = trim($m[2]);
+                }
+                
+                $missing_cols = array_diff(array_keys($col_defs), $existing_cols);
+                if (!empty($missing_cols)) {
+                    foreach ($missing_cols as $col) {
+                        try {
+                            $pdo->exec("ALTER TABLE `$tname` ADD COLUMN `$col` " . $col_defs[$col]);
+                            $steps[] = ['type' => 'ok', 'msg' => "表 [{$tname}] 成功添加缺失字段 [$col]"];
+                            $repaired++;
+                        } catch (PDOException $e) {
+                            $steps[] = ['type' => 'fail', 'msg' => "表 [{$tname}] 添加字段 [$col] 失败: {$e->getMessage()}"];
+                        }
+                    }
+                }
             }
         }
         if ($repaired === 0) {
-            $steps[] = ['type' => 'info', 'msg' => '没有需要修复的表，所有表均已存在'];
+            $steps[] = ['type' => 'info', 'msg' => '所有表和字段均完整，无需修复'];
         }
         echo json_encode(['ok' => true, 'steps' => $steps, 'repaired' => $repaired], JSON_UNESCAPED_UNICODE);
         exit;
@@ -542,6 +575,7 @@ if (php_sapi_name() === 'cli') {
                 exist: '<span class="px-2 py-0.5 text-xs rounded-full bg-green-100 text-green-700">已存在</span>',
                 created: '<span class="px-2 py-0.5 text-xs rounded-full bg-yellow-100 text-yellow-700">已创建</span>',
                 failed: '<span class="px-2 py-0.5 text-xs rounded-full bg-red-100 text-red-700">失败</span>',
+                warn: '<span class="px-2 py-0.5 text-xs rounded-full bg-orange-100 text-orange-700">缺字段</span>',
             };
 
             tbody.innerHTML += `

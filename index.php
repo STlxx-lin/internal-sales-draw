@@ -42,7 +42,8 @@ $prizes = $stmt->fetchAll();
 
 // 获取用户的抽奖历史（最近10条）
 $stmt = $pdo->prepare("
-    SELECT lr.*, p.name as prize_name, pr.name as project_name 
+    SELECT lr.*, p.name as prize_name, pr.name as project_name,
+           (SELECT COUNT(*) FROM expense_records er WHERE er.project_id = lr.project_id AND er.user_id = lr.user_id AND er.is_used = 1 AND er.reason LIKE CONCAT('%抽奖记录 #', lr.id, '%')) > 0 as is_used
     FROM lottery_records lr 
     LEFT JOIN prizes p ON lr.prize_id = p.id 
     JOIN projects pr ON lr.project_id = pr.id
@@ -267,6 +268,7 @@ logUserAction('index_view', '成功', ['user_id' => $user['id'], 'project_id' =>
                             <th class="text-left py-2">时间</th>
                             <th class="text-left py-2">项目</th>
                             <th class="text-left py-2">结果</th>
+                            <th class="text-left py-2">状态</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -279,6 +281,17 @@ logUserAction('index_view', '成功', ['user_id' => $user['id'], 'project_id' =>
                                     <span class="text-green-600 font-medium"><?php echo htmlspecialchars($record['prize_name']); ?></span>
                                 <?php else: ?>
                                     <span class="text-gray-500">未中奖</span>
+                                <?php endif; ?>
+                            </td>
+                            <td class="py-2">
+                                <?php if ($record['prize_name']): ?>
+                                    <?php if ($record['is_used']): ?>
+                                        <span class="px-2 py-1 text-xs rounded-full bg-gray-200 text-gray-500">已报销</span>
+                                    <?php else: ?>
+                                        <span class="px-2 py-1 text-xs rounded-full bg-blue-100 text-blue-700">未报销</span>
+                                    <?php endif; ?>
+                                <?php else: ?>
+                                    <span class="text-gray-400">-</span>
                                 <?php endif; ?>
                             </td>
                         </tr>

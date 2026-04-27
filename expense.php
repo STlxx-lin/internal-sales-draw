@@ -343,22 +343,48 @@ function get_editable_date($record) {
     <div class="container mx-auto px-4 py-8">
         <!-- 头部 -->
         <div class="bg-white rounded-lg shadow-lg p-6 mb-8">
-            <div class="flex justify-between items-center flex-wrap gap-4">
+            <div class="flex justify-between items-center">
                 <h1 class="text-3xl font-bold text-gray-800">
-                    <i class="fa fa-money-bill-wave text-green-500 mr-2"></i>
-                    抽奖活动报销管理
+                    <i class="fa fa-cog text-blue-500 mr-2"></i>
+                    管理后台
                 </h1>
                 <div class="flex space-x-3">
                     <button onclick="showModal('add-modal')" class="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg transition">
                         <i class="fa fa-plus mr-2"></i>新增报销记录
                     </button>
-                    <a href="admin.php" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg transition">
-                        <i class="fa fa-cog mr-2"></i>管理后台
-                    </a>
-                    <a href="index.php" class="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded-lg transition">
+                    <a href="index.php" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg transition">
                         <i class="fa fa-home mr-2"></i>返回首页
                     </a>
                 </div>
+            </div>
+        </div>
+
+        <!-- 标签页导航 -->
+        <div class="bg-white rounded-lg shadow-lg mb-8">
+            <div class="border-b border-gray-200">
+                <nav class="-mb-px flex space-x-8 px-6">
+                    <button onclick="window.location.href='admin.php#projects'" class="tab-button py-4 px-1 border-b-2 font-medium text-sm border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300">
+                        <i class="fa fa-project-diagram mr-2"></i>项目管理
+                    </button>
+                    <button onclick="window.location.href='admin.php#prizes'" class="tab-button py-4 px-1 border-b-2 font-medium text-sm border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300">
+                        <i class="fa fa-gift mr-2"></i>奖品管理
+                    </button>
+                    <button onclick="window.location.href='admin.php#users'" class="tab-button py-4 px-1 border-b-2 font-medium text-sm border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300">
+                        <i class="fa fa-users mr-2"></i>用户管理
+                    </button>
+                    <button onclick="window.location.href='admin.php#user-times'" class="tab-button py-4 px-1 border-b-2 font-medium text-sm border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300">
+                        <i class="fa fa-clock mr-2"></i>次数分配
+                    </button>
+                    <button onclick="window.location.href='admin.php#records'" class="tab-button py-4 px-1 border-b-2 font-medium text-sm border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300">
+                        <i class="fa fa-history mr-2"></i>抽奖记录
+                    </button>
+                    <button onclick="window.location.href='expense.php'" class="tab-button py-4 px-1 border-b-2 font-medium text-sm border-blue-500 text-blue-600">
+                        <i class="fa fa-money-bill-wave mr-2"></i>报销管理
+                    </button>
+                    <button onclick="logoutAdmin()" class="tab-button py-4 px-1 border-b-2 font-medium text-sm border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300">
+                        <i class="fa fa-sign-out-alt mr-2"></i>退出登录
+                    </button>
+                </nav>
             </div>
         </div>
 
@@ -768,6 +794,22 @@ function get_editable_date($record) {
             if (e.target === this) hideModal(this.id);
         });
     });
+
+    // 退出登录
+    function logoutAdmin() {
+        if (confirm('确定要退出登录吗？')) {
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = 'admin.php';
+            const input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = 'action';
+            input.value = 'logout';
+            form.appendChild(input);
+            document.body.appendChild(form);
+            form.submit();
+        }
+    }
 
     // 打开编辑模态框
     function openEdit(id, name, amount, reason) {

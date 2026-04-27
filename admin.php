@@ -287,7 +287,8 @@ if ($_POST) {
                 $times_list = $stmt->fetchAll();
                 
                 $stmt = $pdo->prepare("
-                    SELECT lr.created_at, pr.name as project_name, p.name as prize_name
+                    SELECT lr.id, lr.created_at, pr.name as project_name, p.name as prize_name,
+                           (SELECT COUNT(*) FROM expense_records er WHERE er.project_id = lr.project_id AND er.user_id = lr.user_id AND er.is_used = 1 AND er.reason LIKE CONCAT('%抽奖记录 #', lr.id, '%')) > 0 as is_used
                     FROM lottery_records lr
                     JOIN projects pr ON lr.project_id = pr.id
                     LEFT JOIN prizes p ON lr.prize_id = p.id
@@ -357,19 +358,24 @@ if ($_POST) {
                 ob_start();
                 ?>
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div class="p-4 bg-gray-50 rounded-lg">
-                        <div class="text-xs text-gray-500">姓名</div>
+                    <div class="p-4 bg-gray-50 rounded-lg border border-gray-100">
+                        <div class="text-xs text-gray-500 mb-1">姓名</div>
                         <div class="text-base font-semibold text-gray-800"><?php echo htmlspecialchars($user['name']); ?></div>
                     </div>
-                    <div class="p-4 bg-gray-50 rounded-lg">
-                        <div class="text-xs text-gray-500">IP地址</div>
+                    <div class="p-4 bg-gray-50 rounded-lg border border-gray-100">
+                        <div class="text-xs text-gray-500 mb-1">IP地址</div>
                         <div class="text-base font-semibold text-gray-800"><?php echo htmlspecialchars($user['ip_address']); ?></div>
                     </div>
-                    <div class="p-4 bg-gray-50 rounded-lg">
-                        <div class="text-xs text-gray-500">注册时间</div>
+                    <div class="p-4 bg-gray-50 rounded-lg border border-gray-100">
+                        <div class="text-xs text-gray-500 mb-1">注册时间</div>
                         <div class="text-base font-semibold text-gray-800"><?php echo date('Y-m-d H:i', strtotime($user['created_at'])); ?></div>
                     </div>
                 </div>
+                <?php
+                $info_html = ob_get_clean();
+                
+                ob_start();
+                ?>
                 <div>
                     <div class="text-sm font-semibold text-gray-700 mb-2">次数分配</div>
                     <div class="overflow-x-auto border border-gray-200 rounded-lg">
@@ -445,6 +451,7 @@ if ($_POST) {
                                     <th class="px-4 py-2">时间</th>
                                     <th class="px-4 py-2">项目</th>
                                     <th class="px-4 py-2">奖品</th>
+                                    <th class="px-4 py-2">报销状态</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -458,6 +465,17 @@ if ($_POST) {
                                     <td class="px-4 py-2"><?php echo date('Y-m-d H:i', strtotime($record['created_at'])); ?></td>
                                     <td class="px-4 py-2"><?php echo htmlspecialchars($record['project_name']); ?></td>
                                     <td class="px-4 py-2"><?php echo htmlspecialchars($record['prize_name'] ?? '未中奖'); ?></td>
+                                    <td class="px-4 py-2">
+                                        <?php if ($record['prize_name']): ?>
+                                            <?php if ($record['is_used']): ?>
+                                                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800">已报销</span>
+                                            <?php else: ?>
+                                                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">未报销</span>
+                                            <?php endif; ?>
+                                        <?php else: ?>
+                                            <span class="text-gray-400">-</span>
+                                        <?php endif; ?>
+                                    </td>
                                 </tr>
                                 <?php endforeach; ?>
                                 <?php endif; ?>
@@ -471,7 +489,8 @@ if ($_POST) {
                 header('Content-Type: application/json');
                 echo json_encode([
                     'success' => true,
-                    'title' => $user['name'] . ' 详情',
+                    'title' => $user['name'] . '详情',
+                    'info_html' => $info_html,
                     'html' => $detail_html
                 ]);
                 logAdminAction('get_user_detail', '成功', ['user_id' => $user_id], $admin_log_file);
@@ -633,8 +652,9 @@ if ($_POST) {
                 $total_pages = $total_records > 0 ? (int)ceil($total_records / $records_per_page) : 0;
                 
                 $records_sql = "
-                    SELECT lr.*, u.name as user_name, u.ip_address, 
-                           p.name as prize_name, pr.name as project_name
+                    SELECT lr.*, u.name as user_name, u.ip_address,
+                           p.name as prize_name, pr.name as project_name,
+                           (SELECT COUNT(*) FROM expense_records er WHERE er.project_id = lr.project_id AND er.user_id = lr.user_id AND er.is_used = 1 AND er.reason LIKE CONCAT('%抽奖记录 #', lr.id, '%')) > 0 as is_used
                     FROM lottery_records lr
                     JOIN users u ON lr.user_id = u.id
                     JOIN projects pr ON lr.project_id = pr.id
@@ -657,7 +677,7 @@ if ($_POST) {
                 if (empty($lottery_records)) {
                     ?>
                     <tr>
-                        <td colspan="6" class="px-6 py-8 text-center text-gray-500">
+                        <td colspan="7" class="px-6 py-8 text-center text-gray-500">
                             <i class="fa fa-inbox text-4xl mb-2"></i>
                             <div>暂无抽奖记录</div>
                         </td>
@@ -665,8 +685,9 @@ if ($_POST) {
                     <?php
                 } else {
                     foreach ($lottery_records as $record) {
+                        $is_used = !empty($record['is_used']);
                         ?>
-                        <tr class="bg-white border-b hover:bg-gray-50" data-user="<?php echo htmlspecialchars($record['user_name']); ?>">
+                        <tr class="bg-white border-b hover:bg-gray-50" data-user="<?php echo htmlspecialchars($record['user_name']); ?>" data-record-id="<?php echo $record['id']; ?>">
                             <td class="px-6 py-4"><?php echo $record['id']; ?></td>
                             <td class="px-6 py-4 font-medium"><?php echo htmlspecialchars($record['user_name']); ?></td>
                             <td class="px-6 py-4"><?php echo htmlspecialchars($record['ip_address']); ?></td>
@@ -680,6 +701,28 @@ if ($_POST) {
                                     <span class="px-2 py-1 text-xs rounded-full bg-gray-100 text-gray-600">
                                         <i class="fa fa-times-circle mr-1"></i>未中奖
                                     </span>
+                                <?php endif; ?>
+                            </td>
+                            <td class="px-6 py-4">
+                                <?php if ($is_used): ?>
+                                    <span class="px-2 py-1 text-xs rounded-full bg-gray-200 text-gray-500">
+                                        <i class="fa fa-check mr-1"></i>已使用
+                                    </span>
+                                <?php else: ?>
+                                    <span class="px-2 py-1 text-xs rounded-full bg-blue-100 text-blue-700">
+                                        <i class="fa fa-clock mr-1"></i>未使用
+                                    </span>
+                                <?php endif; ?>
+                            </td>
+                            <td class="px-6 py-4">
+                                <?php if (!$is_used && $record['prize_id']): ?>
+                                    <button onclick="quickExpense(<?php echo $record['id']; ?>, '<?php echo htmlspecialchars($record['user_name'], ENT_QUOTES); ?>', '<?php echo htmlspecialchars($record['prize_name'], ENT_QUOTES); ?>', <?php echo $record['project_id']; ?>, this)" class="text-xs bg-green-500 hover:bg-green-600 text-white px-3 py-1.5 rounded transition">
+                                        <i class="fa fa-money-bill-wave mr-1"></i>快速报销
+                                    </button>
+                                <?php elseif ($is_used): ?>
+                                    <span class="text-xs text-gray-400">—</span>
+                                <?php else: ?>
+                                    <span class="text-xs text-gray-400">未中奖</span>
                                 <?php endif; ?>
                             </td>
                             <td class="px-6 py-4"><?php echo date('Y-m-d H:i:s', strtotime($record['created_at'])); ?></td>
@@ -727,7 +770,96 @@ if ($_POST) {
                 logAdminAction('get_records', '成功', ['page' => $page, 'keyword' => $keyword], $admin_log_file);
                 exit;
                 break;
-                
+
+            case 'quick_expense':
+                // 快速报销：将中奖记录标记为已使用
+                header('Content-Type: application/json');
+                try {
+                    // 支持 JSON 或 FormData
+                    $input = [];
+                    if (isset($_SERVER['CONTENT_TYPE']) && strpos($_SERVER['CONTENT_TYPE'], 'application/json') !== false) {
+                        $input = json_decode(file_get_contents('php://input'), true);
+                    } else {
+                        $input = $_POST;
+                    }
+                    
+                    $record_id = (int)($input['record_id'] ?? 0);
+                    $project_id = (int)($input['project_id'] ?? 0);
+                    $amount = isset($input['amount']) ? (float)$input['amount'] : 0.00;
+                    $applied_at = !empty($input['applied_at']) ? $input['applied_at'] : date('Y-m-d H:i:s');
+
+                    if ($record_id <= 0) {
+                        throw new Exception('记录ID无效');
+                    }
+                    if ($amount < 0) {
+                        throw new Exception('报销金额不能小于0');
+                    }
+
+                    // 处理附件上传
+                    $attachment = null;
+                    if (isset($_FILES['attachment']) && $_FILES['attachment']['error'] === UPLOAD_ERR_OK) {
+                        $upload_dir = __DIR__ . '/uploads/expenses';
+                        if (!is_dir($upload_dir)) {
+                            mkdir($upload_dir, 0755, true);
+                        }
+                        $ext = pathinfo($_FILES['attachment']['name'], PATHINFO_EXTENSION);
+                        $filename = uniqid('exp_') . '_' . time() . '.' . $ext;
+                        $destination = $upload_dir . '/' . $filename;
+                        if (move_uploaded_file($_FILES['attachment']['tmp_name'], $destination)) {
+                            $attachment = 'uploads/expenses/' . $filename;
+                        }
+                    }
+
+                    // 获取中奖记录详情
+                    $stmt = $pdo->prepare("
+                        SELECT lr.*, u.name as user_name, p.name as prize_name
+                        FROM lottery_records lr
+                        JOIN users u ON lr.user_id = u.id
+                        LEFT JOIN prizes p ON lr.prize_id = p.id
+                        WHERE lr.id = ? AND lr.prize_id IS NOT NULL
+                    ");
+                    $stmt->execute([$record_id]);
+                    $record = $stmt->fetch();
+
+                    if (!$record) {
+                        throw new Exception('该记录不存在或未中奖');
+                    }
+
+                    // 检查是否已标记为已使用
+                    $stmt = $pdo->prepare("
+                        SELECT id FROM expense_records
+                        WHERE project_id = ? AND user_id = ? AND is_used = 1 AND reason LIKE CONCAT('%抽奖记录 #', ?, '%')
+                        LIMIT 1
+                    ");
+                    $stmt->execute([$project_id, $record['user_id'], $record_id]);
+                    if ($stmt->fetch()) {
+                        throw new Exception('该记录已被标记为已使用');
+                    }
+
+                    // 创建报销记录（标记为已使用）
+                    $stmt = $pdo->prepare("
+                        INSERT INTO expense_records
+                        (project_id, user_id, expense_name, amount, reason, status, applicant, is_used, applied_at, attachment)
+                        VALUES (?, ?, ?, ?, ?, 'approved', ?, 1, ?, ?)
+                    ");
+                    $stmt->execute([
+                        $project_id,
+                        $record['user_id'],
+                        $record['prize_name'] . ' - 快速报销',
+                        $amount,
+                        '由抽奖记录 #' . $record_id . ' 快速报销生成',
+                        $record['user_name'],
+                        $applied_at,
+                        $attachment
+                    ]);
+
+                    echo json_encode(['success' => true, 'message' => '已标记为已使用']);
+                } catch (Exception $e) {
+                    echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+                }
+                exit;
+                break;
+
             case 'update_probabilities':
                 // 处理概率批量更新 - 独立的异常处理确保始终返回JSON
                 try {
@@ -887,8 +1019,9 @@ $total_pages = ceil($total_records / $records_per_page);
 
 // 获取抽奖记录
 $records_stmt = $pdo->prepare("
-    SELECT lr.*, u.name as user_name, u.ip_address, 
-           p.name as prize_name, pr.name as project_name
+    SELECT lr.*, u.name as user_name, u.ip_address,
+           p.name as prize_name, pr.name as project_name,
+           (SELECT COUNT(*) FROM expense_records er WHERE er.project_id = lr.project_id AND er.user_id = lr.user_id AND er.is_used = 1 AND er.reason LIKE CONCAT('%抽奖记录 #', lr.id, '%')) > 0 as is_used
     FROM lottery_records lr
     JOIN users u ON lr.user_id = u.id
     JOIN projects pr ON lr.project_id = pr.id
@@ -1226,20 +1359,24 @@ $lottery_records = $records_stmt->fetchAll();
                                 <th class="px-6 py-3">IP地址</th>
                                 <th class="px-6 py-3">项目</th>
                                 <th class="px-6 py-3">抽奖结果</th>
+                                <th class="px-6 py-3">报销状态</th>
+                                <th class="px-6 py-3">操作</th>
                                 <th class="px-6 py-3">抽奖时间</th>
                             </tr>
                         </thead>
                         <tbody id="lottery-records-body">
                             <?php if (empty($lottery_records)): ?>
                             <tr>
-                                <td colspan="6" class="px-6 py-8 text-center text-gray-500">
+                                <td colspan="8" class="px-6 py-8 text-center text-gray-500">
                                     <i class="fa fa-inbox text-4xl mb-2"></i>
                                     <div>暂无抽奖记录</div>
                                 </td>
                             </tr>
                             <?php else: ?>
-                                <?php foreach ($lottery_records as $record): ?>
-                                <tr class="bg-white border-b hover:bg-gray-50" data-user="<?php echo htmlspecialchars($record['user_name']); ?>">
+                                <?php foreach ($lottery_records as $record):
+                                    $is_used = !empty($record['is_used']);
+                                ?>
+                                <tr class="bg-white border-b hover:bg-gray-50" data-user="<?php echo htmlspecialchars($record['user_name']); ?>" data-record-id="<?php echo $record['id']; ?>">
                                     <td class="px-6 py-4"><?php echo $record['id']; ?></td>
                                     <td class="px-6 py-4 font-medium"><?php echo htmlspecialchars($record['user_name']); ?></td>
                                     <td class="px-6 py-4"><?php echo htmlspecialchars($record['ip_address']); ?></td>
@@ -1253,6 +1390,28 @@ $lottery_records = $records_stmt->fetchAll();
                                             <span class="px-2 py-1 text-xs rounded-full bg-gray-100 text-gray-600">
                                                 <i class="fa fa-times-circle mr-1"></i>未中奖
                                             </span>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td class="px-6 py-4">
+                                        <?php if ($is_used): ?>
+                                            <span class="px-2 py-1 text-xs rounded-full bg-gray-200 text-gray-500">
+                                                <i class="fa fa-check mr-1"></i>已使用
+                                            </span>
+                                        <?php else: ?>
+                                            <span class="px-2 py-1 text-xs rounded-full bg-blue-100 text-blue-700">
+                                                <i class="fa fa-clock mr-1"></i>未使用
+                                            </span>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td class="px-6 py-4">
+                                        <?php if (!$is_used && $record['prize_id']): ?>
+                                            <button onclick="quickExpense(<?php echo $record['id']; ?>, '<?php echo htmlspecialchars($record['user_name'], ENT_QUOTES); ?>', '<?php echo htmlspecialchars($record['prize_name'], ENT_QUOTES); ?>', <?php echo $record['project_id']; ?>, this)" class="text-xs bg-green-500 hover:bg-green-600 text-white px-3 py-1.5 rounded transition">
+                                                <i class="fa fa-money-bill-wave mr-1"></i>快速报销
+                                            </button>
+                                        <?php elseif ($is_used): ?>
+                                            <span class="text-xs text-gray-400">—</span>
+                                        <?php else: ?>
+                                            <span class="text-xs text-gray-400">未中奖</span>
                                         <?php endif; ?>
                                     </td>
                                     <td class="px-6 py-4"><?php echo date('Y-m-d H:i:s', strtotime($record['created_at'])); ?></td>
@@ -1473,20 +1632,62 @@ $lottery_records = $records_stmt->fetchAll();
         </div>
     </div>
 
-    <div id="user-detail-modal" class="modal fixed inset-0 bg-gray-600 bg-opacity-50 hidden flex items-center justify-center">
-        <div class="bg-white rounded-lg p-6 w-full max-w-4xl max-h-[85vh] overflow-y-auto">
-            <div class="flex items-center justify-between mb-4">
-                <h3 id="user-detail-title" class="text-lg font-bold text-gray-800">用户详情</h3>
-                <button type="button" onclick="hideModal('user-detail-modal')" class="text-gray-500 hover:text-gray-700">
-                    <i class="fa fa-times"></i>
-                </button>
+    <div id="user-detail-modal" class="modal fixed inset-0 bg-gray-600 bg-opacity-50 hidden flex items-center justify-center z-50">
+        <div class="bg-white rounded-lg w-full max-w-4xl max-h-[85vh] flex flex-col relative overflow-hidden">
+            <div class="p-6 pb-4 border-b border-gray-200 bg-white z-20 modal-drag-handle">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 id="user-detail-title" class="text-lg font-bold text-gray-800">用户详情</h3>
+                    <button type="button" onclick="hideModal('user-detail-modal')" class="text-gray-500 hover:text-gray-700">
+                        <i class="fa fa-times"></i>
+                    </button>
+                </div>
+                <div id="user-detail-info"></div>
             </div>
-            <div id="user-detail-body" class="space-y-4 text-sm"></div>
-            <div class="flex justify-end mt-4">
+            <div id="user-detail-body" class="p-6 overflow-y-auto flex-1 space-y-6 text-sm bg-white"></div>
+            <div class="p-4 border-t border-gray-200 flex justify-end bg-gray-50 rounded-b-lg">
                 <button type="button" onclick="hideModal('user-detail-modal')" class="px-4 py-2 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50">
                     关闭
                 </button>
             </div>
+        </div>
+    </div>
+
+    <!-- 快速报销模态框 -->
+    <div id="quick-expense-modal" class="modal fixed inset-0 bg-gray-600 bg-opacity-50 hidden flex items-center justify-center z-50">
+        <div class="bg-white rounded-lg p-6 w-full max-w-md">
+            <h3 class="text-lg font-bold mb-4">快速报销</h3>
+            <form id="quick-expense-form" onsubmit="submitQuickExpense(event)">
+                <input type="hidden" id="qe-record-id">
+                <input type="hidden" id="qe-project-id">
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">报销用户</label>
+                    <input type="text" id="qe-user-name" class="w-full border border-gray-300 rounded-lg px-3 py-2 bg-gray-50" readonly>
+                </div>
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">中奖奖品</label>
+                    <input type="text" id="qe-prize-name" class="w-full border border-gray-300 rounded-lg px-3 py-2 bg-gray-50" readonly>
+                </div>
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">报销时间</label>
+                    <input type="datetime-local" id="qe-applied-at" class="w-full border border-gray-300 rounded-lg px-3 py-2" required>
+                </div>
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">报销金额</label>
+                    <input type="number" id="qe-amount" step="0.01" min="0" class="w-full border border-gray-300 rounded-lg px-3 py-2" required placeholder="请输入报销金额">
+                </div>
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">报销附件</label>
+                    <input type="file" id="qe-attachment" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" accept="image/*,application/pdf">
+                </div>
+                <div class="flex justify-end space-x-3">
+                    <button type="button" onclick="hideModal('quick-expense-modal')" class="px-4 py-2 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50">
+                        取消
+                    </button>
+                    <button type="submit" id="qe-submit-btn" class="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 flex items-center">
+                        <i class="fa fa-check mr-2"></i>确认报销
+                    </button>
+                </div>
+            </form>
         </div>
     </div>
 
@@ -1915,14 +2116,162 @@ $lottery_records = $records_stmt->fetchAll();
         });
     }
 
+    // 快速报销：将中奖记录标记为已使用
+    let currentExpenseBtn = null;
+
+    function quickExpense(recordId, userName, prizeName, projectId, btn) {
+        currentExpenseBtn = btn || (event ? event.target.closest('button') : null);
+        
+        document.getElementById('qe-record-id').value = recordId;
+        document.getElementById('qe-project-id').value = projectId;
+        document.getElementById('qe-user-name').value = userName;
+        document.getElementById('qe-prize-name').value = prizeName;
+        document.getElementById('qe-amount').value = '';
+        
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        const date = String(now.getDate()).padStart(2, '0');
+        const hours = String(now.getHours()).padStart(2, '0');
+        const minutes = String(now.getMinutes()).padStart(2, '0');
+        document.getElementById('qe-applied-at').value = `${year}-${month}-${date}T${hours}:${minutes}`;
+        document.getElementById('qe-attachment').value = '';
+        
+        showModal('quick-expense-modal');
+    }
+
+    function submitQuickExpense(e) {
+        e.preventDefault();
+        
+        const recordId = document.getElementById('qe-record-id').value;
+        const projectId = document.getElementById('qe-project-id').value;
+        const amount = document.getElementById('qe-amount').value;
+        const appliedAt = document.getElementById('qe-applied-at').value;
+        const attachmentInput = document.getElementById('qe-attachment');
+        
+        const btn = document.getElementById('qe-submit-btn');
+        const originalHTML = btn.innerHTML;
+        
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fa fa-spinner fa-spin mr-1"></i>处理中...';
+
+        const formData = new FormData();
+        formData.append('record_id', recordId);
+        formData.append('project_id', projectId);
+        formData.append('amount', amount);
+        if (appliedAt) {
+            formData.append('applied_at', appliedAt);
+        }
+        if (attachmentInput.files.length > 0) {
+            formData.append('attachment', attachmentInput.files[0]);
+        }
+
+        fetch('admin.php?action=quick_expense', {
+            method: 'POST',
+            body: formData
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                hideModal('quick-expense-modal');
+                if (currentExpenseBtn) {
+                    currentExpenseBtn.outerHTML = '<span class="text-xs text-gray-400">—</span>';
+                }
+                const row = document.querySelector(`tr[data-record-id="${recordId}"]`);
+                if (row) {
+                    const statusCell = row.querySelector('td:nth-child(6)');
+                    if (statusCell) {
+                        statusCell.innerHTML = '<span class="px-2 py-1 text-xs rounded-full bg-gray-200 text-gray-500"><i class="fa fa-check mr-1"></i>已使用</span>';
+                    }
+                }
+                btn.disabled = false;
+                btn.innerHTML = originalHTML;
+            } else {
+                alert('操作失败：' + (data.message || '未知错误'));
+                btn.disabled = false;
+                btn.innerHTML = originalHTML;
+            }
+        })
+        .catch(err => {
+            alert('网络错误：' + err.message);
+            btn.disabled = false;
+            btn.innerHTML = originalHTML;
+        });
+    }
+
     // 模态框控制
     function showModal(modalId) {
         document.getElementById(modalId).classList.remove('hidden');
     }
 
     function hideModal(modalId) {
-        document.getElementById(modalId).classList.add('hidden');
+        const modal = document.getElementById(modalId);
+        if (modal) {
+            modal.classList.add('hidden');
+            const dialog = modal.querySelector('.bg-white');
+            if (dialog && typeof dialog.resetPosition === 'function') {
+                dialog.resetPosition();
+            }
+        }
     }
+
+    function makeModalDraggable(modalId) {
+        const modal = document.getElementById(modalId);
+        if (!modal) return;
+        const dialog = modal.querySelector('.bg-white');
+        if (!dialog) return;
+
+        let header = dialog.querySelector('.modal-drag-handle');
+        if (!header) {
+            // 默认将弹窗的第一个子元素（通常是标题栏）作为拖拽把手
+            header = dialog.children[0];
+            if (header) {
+                header.classList.add('modal-drag-handle');
+                header.style.cursor = 'move';
+            }
+        }
+        if (!header) return;
+
+        let isDragging = false;
+        let startX, startY;
+        let currentX = 0, currentY = 0;
+
+        header.addEventListener('mousedown', function(e) {
+            // 仅限鼠标左键，且避开按钮和输入框
+            if (e.button !== 0 || e.target.closest('button') || e.target.closest('input')) return;
+            isDragging = true;
+            startX = e.clientX;
+            startY = e.clientY;
+            e.preventDefault();
+        });
+
+        document.addEventListener('mousemove', function(e) {
+            if (!isDragging) return;
+            e.preventDefault();
+            const dx = e.clientX - startX;
+            const dy = e.clientY - startY;
+            startX = e.clientX;
+            startY = e.clientY;
+            currentX += dx;
+            currentY += dy;
+            dialog.style.transform = `translate(${currentX}px, ${currentY}px)`;
+        });
+
+        document.addEventListener('mouseup', function() {
+            isDragging = false;
+        });
+
+        dialog.resetPosition = function() {
+            currentX = 0;
+            currentY = 0;
+            dialog.style.transform = `translate(0px, 0px)`;
+        };
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+        makeModalDraggable('user-detail-modal');
+        makeModalDraggable('quick-expense-modal');
+    });
 
     function incrementTimes(inputId, delta) {
         const input = document.getElementById(inputId);
@@ -2038,12 +2387,16 @@ $lottery_records = $records_stmt->fetchAll();
 
     function showUserDetail(userId) {
         const title = document.getElementById('user-detail-title');
+        const info = document.getElementById('user-detail-info');
         const body = document.getElementById('user-detail-body');
         if (title) {
             title.textContent = '用户详情';
         }
+        if (info) {
+            info.innerHTML = '';
+        }
         if (body) {
-            body.innerHTML = '<div class="py-6 text-center text-gray-500">加载中...</div>';
+            body.innerHTML = '<div class="py-12 text-center text-gray-500"><i class="fa fa-spinner fa-spin fa-2x"></i><p class="mt-2">加载中...</p></div>';
         }
         const formData = new FormData();
         formData.append('action', 'get_user_detail');
@@ -2060,6 +2413,9 @@ $lottery_records = $records_stmt->fetchAll();
             }
             if (title) {
                 title.textContent = data.title || '用户详情';
+            }
+            if (info) {
+                info.innerHTML = data.info_html || '';
             }
             if (body) {
                 body.innerHTML = data.html || '';

@@ -50,7 +50,8 @@ $total_pages = ceil($total_records / $per_page);
 
 // 获取抽奖记录
 $sql = "
-    SELECT lr.*, p.name as prize_name, pr.name as project_name 
+    SELECT lr.*, p.name as prize_name, pr.name as project_name,
+           (SELECT COUNT(*) FROM expense_records er WHERE er.project_id = lr.project_id AND er.user_id = lr.user_id AND er.is_used = 1 AND er.reason LIKE CONCAT('%抽奖记录 #', lr.id, '%')) > 0 as is_used
     FROM lottery_records lr 
     LEFT JOIN prizes p ON lr.prize_id = p.id 
     JOIN projects pr ON lr.project_id = pr.id
@@ -228,6 +229,7 @@ $win_rate = $stats['total_draws'] > 0 ? round(($stats['total_wins'] / $stats['to
                                 <th class="px-6 py-3">时间</th>
                                 <th class="px-6 py-3">项目</th>
                                 <th class="px-6 py-3">结果</th>
+                                <th class="px-6 py-3">状态</th>
                                 <th class="px-6 py-3">IP地址</th>
                             </tr>
                         </thead>
@@ -258,6 +260,17 @@ $win_rate = $stats['total_draws'] > 0 ? round(($stats['total_wins'] / $stats['to
                                             <i class="fa fa-times-circle text-gray-400 mr-2"></i>
                                             <span class="text-gray-500">未中奖</span>
                                         </div>
+                                    <?php endif; ?>
+                                </td>
+                                <td class="px-6 py-4">
+                                    <?php if ($record['prize_name']): ?>
+                                        <?php if ($record['is_used']): ?>
+                                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">已报销</span>
+                                        <?php else: ?>
+                                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">未报销</span>
+                                        <?php endif; ?>
+                                    <?php else: ?>
+                                        <span class="text-gray-400">-</span>
                                     <?php endif; ?>
                                 </td>
                                 <td class="px-6 py-4 text-sm text-gray-500">
