@@ -12,3 +12,4 @@
 2026-03-16 06:35:48	::1	admin	get_user_detail	成功	{"user_id":26}
 2026-03-16 06:53:37	::1	admin	get_user_detail	成功	{"user_id":25}
 2026-03-16 06:53:40	::1	admin	get_user_detail	成功	{"user_id":26}
+2026-04-27 01:46:32	::1	admin	login	成功	管理员登录成功

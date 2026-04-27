@@ -957,6 +957,9 @@ $lottery_records = $records_stmt->fetchAll();
                     <button onclick="showTab('records')" id="tab-records" class="tab-button py-4 px-1 border-b-2 font-medium text-sm border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300">
                         <i class="fa fa-history mr-2"></i>抽奖记录
                     </button>
+                    <button onclick="window.location.href='expense.php'" id="tab-expense" class="tab-button py-4 px-1 border-b-2 font-medium text-sm border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300">
+                        <i class="fa fa-money-bill-wave mr-2"></i>报销管理
+                    </button>
                     <button onclick="showTab('logout')" id="tab-logout" class="tab-button py-4 px-1 border-b-2 font-medium text-sm border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300">
                         <i class="fa fa-sign-out-alt mr-2"></i>退出登录
                     </button>
