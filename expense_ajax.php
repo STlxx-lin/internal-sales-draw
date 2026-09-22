@@ -2,18 +2,22 @@
 // 报销管理AJAX接口
 session_start();
 require_once 'config.php';
+require_once __DIR__ . '/expense_service.php';
 
 // 验证登录态
 if (!isset($_SESSION['admin_logged_in']) || $_SESSION['admin_logged_in'] !== true) {
+    http_response_code(401);
     header('Content-Type: application/json');
     echo json_encode(['success' => false, 'message' => '未登录']);
     exit;
 }
+session_write_close();
 
 $action = $_GET['action'] ?? '';
 
 header('Content-Type: application/json; charset=utf-8');
 
+try {
 switch ($action) {
     case 'history':
         // 获取某条报销记录的修改历史
@@ -23,7 +27,7 @@ switch ($action) {
             break;
         }
 
-        $stmt = $pdo->prepare("SELECT * FROM expense_edit_history WHERE expense_id = ? ORDER BY created_at DESC");
+        $stmt = $pdo->prepare("SELECT * FROM expense_edit_history WHERE expense_id = ? ORDER BY created_at DESC, id DESC");
         $stmt->execute([$expense_id]);
         $history = $stmt->fetchAll();
 
@@ -47,13 +51,11 @@ switch ($action) {
             break;
         }
 
-        $applied_date = strtotime($record['applied_at']);
-        $two_days_after = strtotime('+2 days', $applied_date);
-        $now = time();
+        $two_days_after = expenseEditableFrom($record);
 
         echo json_encode([
             'success' => true,
-            'editable' => ($now >= $two_days_after) && in_array($record['status'], ['pending', 'rejected']),
+            'editable' => expenseCanEdit($record),
             'editable_from' => date('Y-m-d H:i', $two_days_after),
             'status' => $record['status']
         ], JSON_UNESCAPED_UNICODE);
@@ -61,4 +63,9 @@ switch ($action) {
 
     default:
         echo json_encode(['success' => false, 'message' => '未知操作']);
+}
+} catch (Throwable $e) {
+    error_log('Expense query failed: ' . $e->getMessage());
+    http_response_code(500);
+    echo json_encode(['success' => false, 'message' => '查询失败，请稍后重试']);
 }

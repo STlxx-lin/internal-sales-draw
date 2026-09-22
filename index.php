@@ -11,9 +11,9 @@ if (!$user) {
     exit;
 }
 
-// 获取所有启用的项目
-$stmt = $pdo->prepare("SELECT p.* FROM projects p WHERE p.status = 1 ORDER BY p.id");
-$stmt->execute();
+// 一次查询获取用户可见的启用项目和次数，避免项目列表逐项查询。
+$stmt = $pdo->prepare("SELECT p.*, upt.remaining_times FROM projects p JOIN user_project_times upt ON upt.project_id = p.id AND upt.user_id = ? AND upt.is_visible = 1 WHERE p.status = 1 ORDER BY p.id");
+$stmt->execute([$user['id']]);
 $projects = $stmt->fetchAll();
 
 // 获取当前选中的项目（默认第一个）
@@ -28,10 +28,11 @@ foreach ($projects as $project) {
     }
 }
 
-// 检查用户是否在当前项目中可见
-$stmt = $pdo->prepare("SELECT * FROM user_project_times WHERE user_id = ? AND project_id = ? AND is_visible = 1");
-$stmt->execute([$user['id'], $current_project_id]);
-$user_project = $stmt->fetch();
+// 当前项目来自已过滤权限的项目列表。
+$user_project = $current_project;
+if (!$current_project) {
+    $current_project_id = 0;
+}
 
 $remaining_times = $user_project ? $user_project['remaining_times'] : 0;
 
@@ -43,12 +44,12 @@ $prizes = $stmt->fetchAll();
 // 获取用户的抽奖历史（最近10条）
 $stmt = $pdo->prepare("
     SELECT lr.*, p.name as prize_name, pr.name as project_name,
-           (SELECT COUNT(*) FROM expense_records er WHERE er.project_id = lr.project_id AND er.user_id = lr.user_id AND er.is_used = 1 AND er.reason LIKE CONCAT('%抽奖记录 #', lr.id, '%')) > 0 as is_used
+           EXISTS(SELECT 1 FROM expense_records er WHERE er.project_id = lr.project_id AND er.user_id = lr.user_id AND er.is_used = 1 AND er.reason REGEXP CONCAT('抽奖记录 #', lr.id, '([^0-9]|$)')) as is_used
     FROM lottery_records lr 
     LEFT JOIN prizes p ON lr.prize_id = p.id 
     JOIN projects pr ON lr.project_id = pr.id
     WHERE lr.user_id = ? 
-    ORDER BY lr.created_at DESC 
+    ORDER BY lr.created_at DESC, lr.id DESC
     LIMIT 10
 ");
 $stmt->execute([$user['id']]);
@@ -171,18 +172,11 @@ logUserAction('index_view', '成功', ['user_id' => $user['id'], 'project_id' =>
                     <h3 class="text-lg font-semibold text-gray-800 mb-3">选择抽奖项目</h3>
                     <div class="space-y-2">
                         <?php foreach ($projects as $project): ?>
-                            <?php
-                            // 检查用户在此项目中的可见性
-                            $stmt = $pdo->prepare("SELECT remaining_times FROM user_project_times WHERE user_id = ? AND project_id = ? AND is_visible = 1");
-                            $stmt->execute([$user['id'], $project['id']]);
-                            $project_times = $stmt->fetch();
-                            if (!$project_times) continue;
-                            ?>
                             <a href="?project=<?php echo $project['id']; ?>" 
                                class="block p-3 rounded-lg border-2 transition <?php echo $project['id'] == $current_project_id ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-blue-300'; ?>">
                                 <div class="flex justify-between items-center">
                                     <span class="font-medium"><?php echo htmlspecialchars($project['name']); ?></span>
-                                    <span class="text-sm text-gray-500">剩余 <?php echo $project_times['remaining_times']; ?> 次</span>
+                                    <span class="text-sm text-gray-500">剩余 <?php echo (int)$project['remaining_times']; ?> 次</span>
                                 </div>
                             </a>
                         <?php endforeach; ?>
@@ -335,11 +329,12 @@ logUserAction('index_view', '成功', ['user_id' => $user['id'], 'project_id' =>
                         resultContent.innerHTML = `
                             <i class="fa fa-trophy text-4xl mb-4"></i>
                             <h3 class="text-2xl font-bold mb-2">恭喜中奖！</h3>
-                            <p class="text-lg">${data.prize.name}</p>
+                            <p class="text-lg" data-prize-name></p>
                             ${data.remaining_times > 0 ? 
                                 '<button onclick="location.reload()" class="mt-4 bg-white text-blue-600 px-6 py-2 rounded-lg font-medium hover:bg-gray-100 transition">继续抽奖</button>' : 
                                 '<p class="mt-4 text-sm opacity-75">抽奖次数已用完</p>'}
                         `;
+                        resultContent.querySelector('[data-prize-name]').textContent = data.prize.name;
                         resultContent.className = 'p-6 bg-gradient-to-r from-green-400 to-blue-500 rounded-lg text-white text-center';
                     } else {
                         resultContent.innerHTML = `

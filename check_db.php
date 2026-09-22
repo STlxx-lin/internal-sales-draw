@@ -127,6 +127,23 @@ $required_tables = [
             KEY `idx_expense_id` (`expense_id`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='报销修改历史记录表'",
     ],
+    'user_times_logs' => [
+        'desc' => '用户抽奖次数分配记录表',
+        'sql' => "CREATE TABLE `user_times_logs` (
+            `id` INT(11) NOT NULL AUTO_INCREMENT,
+            `user_id` INT(11) NOT NULL COMMENT '用户ID',
+            `project_id` INT(11) NOT NULL COMMENT '项目ID',
+            `times` INT(11) NOT NULL DEFAULT 0 COMMENT '分配次数',
+            `action` VARCHAR(50) NOT NULL DEFAULT '单人分配' COMMENT '操作类型：单人分配/批量分配',
+            `operator` VARCHAR(50) NOT NULL DEFAULT 'admin' COMMENT '操作人',
+            `ip_address` VARCHAR(45) NOT NULL DEFAULT '' COMMENT '操作IP',
+            `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '分配时间',
+            PRIMARY KEY (`id`),
+            KEY `idx_user_id` (`user_id`),
+            KEY `idx_project_id` (`project_id`),
+            KEY `idx_created_at` (`created_at`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户抽奖次数分配记录表'",
+    ],
 ];
 
 $upload_dirs = ['uploads', 'uploads/expenses'];

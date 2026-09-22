@@ -51,12 +51,12 @@ $total_pages = ceil($total_records / $per_page);
 // 获取抽奖记录
 $sql = "
     SELECT lr.*, p.name as prize_name, pr.name as project_name,
-           (SELECT COUNT(*) FROM expense_records er WHERE er.project_id = lr.project_id AND er.user_id = lr.user_id AND er.is_used = 1 AND er.reason LIKE CONCAT('%抽奖记录 #', lr.id, '%')) > 0 as is_used
+           EXISTS(SELECT 1 FROM expense_records er WHERE er.project_id = lr.project_id AND er.user_id = lr.user_id AND er.is_used = 1 AND er.reason REGEXP CONCAT('抽奖记录 #', lr.id, '([^0-9]|$)')) as is_used
     FROM lottery_records lr 
     LEFT JOIN prizes p ON lr.prize_id = p.id 
     JOIN projects pr ON lr.project_id = pr.id
     WHERE {$where_clause}
-    ORDER BY lr.created_at DESC 
+    ORDER BY lr.created_at DESC, lr.id DESC
     LIMIT {$per_page} OFFSET {$offset}
 ";
 $stmt = $pdo->prepare($sql);

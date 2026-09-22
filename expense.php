@@ -1,6 +1,7 @@
 <?php
 session_start();
 require_once 'config.php';
+require_once __DIR__ . '/expense_service.php';
 
 // 管理员密码
 define('ADMIN_PASSWORD', 'admin123');
@@ -16,7 +17,7 @@ if (!isset($_SESSION['admin_logged_in']) || $_SESSION['admin_logged_in'] !== tru
             $login_error = '密码错误';
         }
     }
-    if (!isset($_SESSION['admin_logged_in'])) {
+    if (($_SESSION['admin_logged_in'] ?? false) !== true) {
         ?>
         <!DOCTYPE html>
         <html lang="zh-CN">
@@ -55,142 +56,83 @@ if (!isset($_SESSION['admin_logged_in']) || $_SESSION['admin_logged_in'] !== tru
     }
 }
 
-// 处理后操作
-$action = $_POST['action'] ?? $_GET['action'] ?? '';
+// 报销写操作统一校验并在事务中完成，附件失败时清理本次上传。
+$action = $_POST['action'] ?? '';
 $message = '';
 $error = '';
-
-// 权限检查：判断当前用户是否为授权用户（管理员角色）
-$is_authorized = true; // 已登录的管理员即为授权用户
-
-if ($_POST) {
+$csrf_token = expenseCsrfToken();
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $uploaded_attachment = null;
     try {
+        expenseCheckCsrf($_POST['csrf_token'] ?? null);
+        if (!in_array($action, ['add', 'edit', 'approve', 'delete'], true)) {
+            throw new InvalidArgumentException('未知操作');
+        }
+        $pdo->beginTransaction();
         switch ($action) {
             case 'add':
-                // 添加报销记录
-                $project_id = (int)$_POST['project_id'];
-                $expense_name = trim($_POST['expense_name']);
-                $amount = (float)$_POST['amount'];
-                $reason = trim($_POST['reason']);
-                $applicant = trim($_POST['applicant']);
+                $project_id = filter_var($_POST['project_id'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+                $expense_name = trim($_POST['expense_name'] ?? '');
+                $amount = expenseAmount($_POST['amount'] ?? '');
+                $reason = trim($_POST['reason'] ?? '');
+                $applicant = trim($_POST['applicant'] ?? '');
                 $status = $_POST['status'] ?? 'pending';
-
-                if (empty($expense_name)) throw new Exception('报销活动名称不能为空');
-                if ($amount <= 0) throw new Exception('报销金额必须大于0');
-                if (empty($applicant)) throw new Exception('申请人不能为空');
-
-                // 处理附件上传
-                $attachment = '';
-                if (isset($_FILES['attachment']) && $_FILES['attachment']['error'] === UPLOAD_ERR_OK) {
-                    $ext = pathinfo($_FILES['attachment']['name'], PATHINFO_EXTENSION);
-                    $filename = 'expense_' . time() . '_' . uniqid() . '.' . $ext;
-                    $destination = __DIR__ . '/uploads/expenses/' . $filename;
-                    if (move_uploaded_file($_FILES['attachment']['tmp_name'], $destination)) {
-                        $attachment = 'uploads/expenses/' . $filename;
-                    }
-                }
-
-                $stmt = $pdo->prepare("INSERT INTO expense_records (project_id, expense_name, amount, reason, status, applicant, applied_at) VALUES (?, ?, ?, ?, ?, ?, NOW())");
-                $stmt->execute([$project_id, $expense_name, $amount, $reason, $status, $applicant]);
-                header('Location: expense.php?message=' . urlencode('报销记录添加成功'));
-                exit;
+                if ($expense_name === '' || $applicant === '') { throw new InvalidArgumentException('活动名称和申请人不能为空'); }
+                if (!in_array($status, ['pending', 'approved'], true)) { throw new InvalidArgumentException('初始状态无效'); }
+                $stmt = $pdo->prepare('SELECT id FROM projects WHERE id = ?');
+                $stmt->execute([$project_id]);
+                if (!$project_id || !$stmt->fetch()) { throw new InvalidArgumentException('请选择有效项目'); }
+                $uploaded_attachment = expenseUpload($_FILES['attachment'] ?? null);
+                $stmt = $pdo->prepare("INSERT INTO expense_records (project_id, expense_name, amount, reason, status, applicant, applied_at, attachment, approver, approved_at) VALUES (?, ?, ?, ?, ?, ?, NOW(), ?, ?, ?)");
+                $stmt->execute([$project_id, $expense_name, $amount, $reason, $status, $applicant, $uploaded_attachment,
+                    $status === 'approved' ? '管理员' : null, $status === 'approved' ? date('Y-m-d H:i:s') : null]);
+                expenseAudit($pdo, $pdo->lastInsertId(), '管理员', '新增报销', [], ['amount' => $amount, 'reason' => $reason, 'attachment' => $uploaded_attachment, 'status' => $status]);
+                $message = '报销记录添加成功';
                 break;
-
             case 'edit':
-                // 编辑报销记录 - 后天编辑权限控制
-                $id = (int)$_POST['id'];
-                $new_amount = (float)$_POST['amount'];
-                $new_reason = trim($_POST['reason']);
-                $edit_reason = trim($_POST['edit_reason'] ?? '');
-
-                if ($new_amount <= 0) throw new Exception('报销金额必须大于0');
-
-                // 获取当前记录数据用于权限判断
-                $stmt = $pdo->prepare("SELECT * FROM expense_records WHERE id = ?");
-                $stmt->execute([$id]);
-                $record = $stmt->fetch();
-
-                if (!$record) throw new Exception('报销记录不存在');
-
-                // 后天编辑权限控制：当前日期必须在申请日期的两天后才能编辑
-                $applied_date = strtotime($record['applied_at']);
-                $two_days_after = strtotime('+2 days', $applied_date);
-                $now = time();
-
-                if ($now < $two_days_after) {
-                    throw new Exception('该报销记录需在申请日期两天后才能编辑（可编辑日期：' . date('Y-m-d H:i', $two_days_after) . '起）');
-                }
-
-                // 权限控制：只有未审批(pending)或被拒绝(rejected)的状态可以编辑
-                if (!in_array($record['status'], ['pending', 'rejected'])) {
-                    throw new Exception('该报销记录当前状态不允许编辑，仅未审批或被拒绝的记录可编辑');
-                }
-
-                if (!$is_authorized) throw new Exception('您没有编辑权限');
-
-                // 保存修改前的数据
-                $old_data = json_encode([
-                    'amount' => $record['amount'],
-                    'reason' => $record['reason'],
-                    'attachment' => $record['attachment']
-                ], JSON_UNESCAPED_UNICODE);
-
-                // 处理新附件上传
-                $attachment = $record['attachment']; // 默认保留原附件
-                if (isset($_FILES['attachment']) && $_FILES['attachment']['error'] === UPLOAD_ERR_OK) {
-                    $ext = pathinfo($_FILES['attachment']['name'], PATHINFO_EXTENSION);
-                    $filename = 'expense_' . time() . '_' . uniqid() . '.' . $ext;
-                    $destination = __DIR__ . '/uploads/expenses/' . $filename;
-                    if (move_uploaded_file($_FILES['attachment']['tmp_name'], $destination)) {
-                        $attachment = 'uploads/expenses/' . $filename;
-                    }
-                }
-
-                // 更新报销记录
-                $stmt = $pdo->prepare("UPDATE expense_records SET amount = ?, reason = ?, attachment = ? WHERE id = ?");
-                $stmt->execute([$new_amount, $new_reason, $attachment, $id]);
-
-                // 记录修改后的数据
-                $new_data = json_encode([
-                    'amount' => $new_amount,
-                    'reason' => $new_reason,
-                    'attachment' => $attachment
-                ], JSON_UNESCAPED_UNICODE);
-
-                // 保存修改历史
-                $editor = '管理员'; // 实际项目中应从session获取用户名
-                $stmt = $pdo->prepare("INSERT INTO expense_edit_history (expense_id, editor, edit_reason, old_data, new_data) VALUES (?, ?, ?, ?, ?)");
-                $stmt->execute([$id, $editor, $edit_reason, $old_data, $new_data]);
-
-                header('Location: expense.php?message=' . urlencode('报销记录编辑成功'));
-                exit;
+                $id = (int)($_POST['id'] ?? 0);
+                $record = expenseLockRecord($pdo, $id);
+                if (!expenseCanEdit($record)) { throw new InvalidArgumentException('仅申请两天后的待审批或已拒绝记录可编辑，已核销记录不能编辑'); }
+                $amount = expenseAmount($_POST['amount'] ?? '');
+                $reason = trim($_POST['reason'] ?? '');
+                $uploaded_attachment = expenseUpload($_FILES['attachment'] ?? null);
+                $attachment = $uploaded_attachment ?? $record['attachment'];
+                $stmt = $pdo->prepare("UPDATE expense_records SET amount = ?, reason = ?, attachment = ?, status = 'pending', approver = NULL, approved_at = NULL WHERE id = ?");
+                $stmt->execute([$amount, $reason, $attachment, $id]);
+                expenseAudit($pdo, $id, '管理员', trim($_POST['edit_reason'] ?? '') ?: '修改后重新提交审批',
+                    array_intersect_key($record, array_flip(['amount', 'reason', 'attachment', 'status', 'approver'])),
+                    ['amount' => $amount, 'reason' => $reason, 'attachment' => $attachment, 'status' => 'pending', 'approver' => null]);
+                $message = '报销记录已保存，等待审批';
                 break;
-
             case 'approve':
-                // 审批报销记录
-                $id = (int)$_POST['id'];
-                $new_status = $_POST['status'] ?? 'approved';
-                $approver = trim($_POST['approver'] ?? '管理员');
-
-                $stmt = $pdo->prepare("UPDATE expense_records SET status = ?, approver = ?, approved_at = NOW() WHERE id = ?");
-                $stmt->execute([$new_status, $approver, $id]);
-                header('Location: expense.php?message=' . urlencode('审批操作成功'));
-                exit;
+                expenseApprove($pdo, (int)($_POST['id'] ?? 0), $_POST['status'] ?? '', trim($_POST['approver'] ?? ''));
+                $message = '审批操作成功';
                 break;
-
             case 'delete':
-                // 删除报销记录
-                $id = (int)$_POST['id'];
-                $stmt = $pdo->prepare("DELETE FROM expense_records WHERE id = ?");
+                $id = (int)($_POST['id'] ?? 0);
+                $record = expenseLockRecord($pdo, $id);
+                if ($record['status'] === 'approved' || !empty($record['is_used'])) {
+                    throw new InvalidArgumentException('已通过或已核销记录不能删除');
+                }
+                $stmt = $pdo->prepare('DELETE FROM expense_edit_history WHERE expense_id = ?');
                 $stmt->execute([$id]);
-                header('Location: expense.php?message=' . urlencode('报销记录删除成功'));
-                exit;
+                $stmt = $pdo->prepare('DELETE FROM expense_records WHERE id = ?');
+                $stmt->execute([$id]);
+                $message = '报销记录删除成功';
                 break;
         }
-    } catch (Exception $e) {
-        $error = $e->getMessage();
-    } catch (PDOException $e) {
-        $error = '数据库操作失败：' . $e->getMessage();
+        $pdo->commit();
+        header('Location: expense.php?message=' . urlencode($message));
+        exit;
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) { $pdo->rollBack(); }
+        expenseDiscardUpload($uploaded_attachment);
+        if ($e instanceof InvalidArgumentException) {
+            $error = $e->getMessage();
+        } else {
+            error_log('Expense operation failed: ' . $e->getMessage());
+            $error = '报销操作失败，请稍后重试';
+        }
     }
 }
 
@@ -265,15 +207,17 @@ if (!empty($where_clauses)) {
 }
 
 // 查询报销记录总数
-$count_stmt = $pdo->prepare("SELECT COUNT(*) FROM expense_records er {$where_sql}");
+$count_stmt = $pdo->prepare("SELECT COUNT(*) AS total, COALESCE(SUM(status = 'pending'), 0) AS pending, COALESCE(SUM(status = 'approved'), 0) AS approved, COALESCE(SUM(amount), 0) AS amount FROM expense_records er {$where_sql}");
 $count_stmt->execute($params);
-$total_records = $count_stmt->fetchColumn();
+$expense_stats = $count_stmt->fetch();
+$total_records = (int)$expense_stats['total'];
 
 // 分页
 $records_per_page = 15;
 $page = isset($_GET['page']) ? max(1, (int)$_GET['page']) : 1;
+$total_pages = (int)ceil($total_records / $records_per_page);
+$page = min($page, max(1, $total_pages));
 $offset = ($page - 1) * $records_per_page;
-$total_pages = ceil($total_records / $records_per_page);
 
 // 查询报销记录列表（关联项目名称）
 $query_sql = "
@@ -281,7 +225,7 @@ $query_sql = "
     FROM expense_records er
     LEFT JOIN projects p ON er.project_id = p.id
     {$where_sql}
-    ORDER BY er.{$sort_field} {$sort_order}
+    ORDER BY er.{$sort_field} {$sort_order}, er.id DESC
     LIMIT {$records_per_page} OFFSET {$offset}
 ";
 $stmt = $pdo->prepare($query_sql);
@@ -317,17 +261,12 @@ function sort_url($field) {
 
 // 检查当前记录是否可编辑（后天规则）
 function can_edit($record) {
-    $applied_date = strtotime($record['applied_at']);
-    $two_days_after = strtotime('+2 days', $applied_date);
-    $now = time();
-    // 时间条件和状态条件都满足时才可编辑
-    return ($now >= $two_days_after) && in_array($record['status'], ['pending', 'rejected']);
+    return expenseCanEdit($record);
 }
 
 // 计算后天可编辑日期
 function get_editable_date($record) {
-    $applied_date = strtotime($record['applied_at']);
-    return date('Y-m-d H:i', strtotime('+2 days', $applied_date));
+    return date('Y-m-d H:i', expenseEditableFrom($record));
 }
 ?>
 <!DOCTYPE html>
@@ -338,6 +277,7 @@ function get_editable_date($record) {
     <title>报销管理 - <?php echo SITE_NAME; ?></title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link rel="stylesheet" href="assets/css/admin.css">
 </head>
 <body class="bg-gray-100 min-h-screen">
     <div class="container mx-auto px-4 py-8">
@@ -363,19 +303,19 @@ function get_editable_date($record) {
         <div class="bg-white rounded-lg shadow-lg mb-8">
             <div class="border-b border-gray-200">
                 <nav class="-mb-px flex space-x-8 px-6">
-                    <button onclick="window.location.href='admin.php#projects'" class="tab-button py-4 px-1 border-b-2 font-medium text-sm border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300">
+                    <button onclick="window.location.href='admin/projects.php'" class="tab-button py-4 px-1 border-b-2 font-medium text-sm border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300">
                         <i class="fa fa-project-diagram mr-2"></i>项目管理
                     </button>
-                    <button onclick="window.location.href='admin.php#prizes'" class="tab-button py-4 px-1 border-b-2 font-medium text-sm border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300">
+                    <button onclick="window.location.href='admin/prizes.php'" class="tab-button py-4 px-1 border-b-2 font-medium text-sm border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300">
                         <i class="fa fa-gift mr-2"></i>奖品管理
                     </button>
-                    <button onclick="window.location.href='admin.php#users'" class="tab-button py-4 px-1 border-b-2 font-medium text-sm border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300">
+                    <button onclick="window.location.href='admin/users.php'" class="tab-button py-4 px-1 border-b-2 font-medium text-sm border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300">
                         <i class="fa fa-users mr-2"></i>用户管理
                     </button>
-                    <button onclick="window.location.href='admin.php#user-times'" class="tab-button py-4 px-1 border-b-2 font-medium text-sm border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300">
+                    <button onclick="window.location.href='admin/user_times.php'" class="tab-button py-4 px-1 border-b-2 font-medium text-sm border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300">
                         <i class="fa fa-clock mr-2"></i>次数分配
                     </button>
-                    <button onclick="window.location.href='admin.php#records'" class="tab-button py-4 px-1 border-b-2 font-medium text-sm border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300">
+                    <button onclick="window.location.href='admin/lottery_records.php'" class="tab-button py-4 px-1 border-b-2 font-medium text-sm border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300">
                         <i class="fa fa-history mr-2"></i>抽奖记录
                     </button>
                     <button onclick="window.location.href='expense.php'" class="tab-button py-4 px-1 border-b-2 font-medium text-sm border-blue-500 text-blue-600">
@@ -483,8 +423,7 @@ function get_editable_date($record) {
                 <div class="text-sm text-gray-500">待审批</div>
                 <div class="text-2xl font-bold text-yellow-600">
                     <?php
-                    $cnt = $pdo->query("SELECT COUNT(*) FROM expense_records WHERE status='pending'")->fetchColumn();
-                    echo $cnt;
+                    echo (int)$expense_stats['pending'];
                     ?>
                 </div>
             </div>
@@ -492,17 +431,15 @@ function get_editable_date($record) {
                 <div class="text-sm text-gray-500">已通过</div>
                 <div class="text-2xl font-bold text-green-600">
                     <?php
-                    $cnt = $pdo->query("SELECT COUNT(*) FROM expense_records WHERE status='approved'")->fetchColumn();
-                    echo $cnt;
+                    echo (int)$expense_stats['approved'];
                     ?>
                 </div>
             </div>
             <div class="bg-white rounded-lg shadow p-4 text-center">
-                <div class="text-sm text-gray-500">报销总额</div>
+                <div class="text-sm text-gray-500">当前筛选报销总额</div>
                 <div class="text-2xl font-bold text-red-600">
                     <?php
-                    $total_amount = $pdo->query("SELECT COALESCE(SUM(amount), 0) FROM expense_records")->fetchColumn();
-                    echo '¥' . number_format($total_amount, 2);
+                    echo '¥' . number_format($expense_stats['amount'], 2);
                     ?>
                 </div>
             </div>
@@ -581,6 +518,8 @@ function get_editable_date($record) {
                                     <?php $editable_date = get_editable_date($exp); ?>
                                     <?php if (can_edit($exp)): ?>
                                         <span class="px-2 py-1 text-xs rounded-full bg-green-100 text-green-700" title="现在可以编辑">可编辑</span>
+                                    <?php elseif ($exp['status'] === 'approved' || !empty($exp['is_used'])): ?>
+                                        <span class="text-gray-500">已完成，不可编辑</span>
                                     <?php else: ?>
                                         <span class="px-2 py-1 text-xs rounded-full bg-gray-100 text-gray-500" title="需等到 <?php echo $editable_date; ?> 之后"><?php echo $editable_date; ?>起</span>
                                     <?php endif; ?>
@@ -588,7 +527,7 @@ function get_editable_date($record) {
                                 <td class="px-4 py-3">
                                     <div class="flex space-x-2">
                                         <?php if (can_edit($exp)): ?>
-                                            <button onclick="openEdit(<?php echo $exp['id']; ?>, '<?php echo htmlspecialchars($exp['expense_name'], ENT_QUOTES); ?>', <?php echo $exp['amount']; ?>, '<?php echo htmlspecialchars($exp['reason'] ?? '', ENT_QUOTES); ?>')" class="text-blue-600 hover:text-blue-900" title="编辑">
+                                            <button onclick="openEdit(<?php echo (int)$exp['id']; ?>, <?php echo htmlspecialchars(json_encode($exp['expense_name']), ENT_QUOTES); ?>, <?php echo htmlspecialchars(json_encode($exp['amount']), ENT_QUOTES); ?>, <?php echo htmlspecialchars(json_encode($exp['reason'] ?? ''), ENT_QUOTES); ?>)" class="text-blue-600 hover:text-blue-900" title="编辑">
                                                 <i class="fa fa-edit"></i>
                                             </button>
                                         <?php else: ?>
@@ -605,9 +544,11 @@ function get_editable_date($record) {
                                             <i class="fa fa-times-circle"></i>
                                         </button>
                                         <?php endif; ?>
+                                        <?php if ($exp['status'] !== 'approved' && empty($exp['is_used'])): ?>
                                         <button onclick="deleteExpense(<?php echo $exp['id']; ?>)" class="text-gray-600 hover:text-gray-900" title="删除">
                                             <i class="fa fa-trash"></i>
                                         </button>
+                                        <?php endif; ?>
                                     </div>
                                 </td>
                             </tr>
@@ -653,6 +594,7 @@ function get_editable_date($record) {
             <h3 class="text-lg font-bold mb-4"><i class="fa fa-plus-circle text-green-500 mr-2"></i>新增报销记录</h3>
             <form method="POST" action="expense.php" enctype="multipart/form-data">
                 <input type="hidden" name="action" value="add">
+                <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($csrf_token, ENT_QUOTES); ?>">
                 <div class="mb-3">
                     <label class="block text-sm font-medium text-gray-700 mb-1">所属项目</label>
                     <select name="project_id" class="w-full border border-gray-300 rounded-lg px-3 py-2" required>
@@ -686,8 +628,8 @@ function get_editable_date($record) {
                     </select>
                 </div>
                 <div class="mb-4">
-                    <label class="block text-sm font-medium text-gray-700 mb-1">附件（可选）</label>
-                    <input type="file" name="attachment" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">附件（可选，JPG / PNG / PDF，最大10MB）</label>
+                    <input type="file" accept=".jpg,.jpeg,.png,.pdf" name="attachment" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
                 </div>
                 <div class="flex justify-end space-x-3">
                     <button type="button" onclick="hideModal('add-modal')" class="px-4 py-2 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50">取消</button>
@@ -702,10 +644,11 @@ function get_editable_date($record) {
         <div class="bg-white rounded-lg p-6 w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
             <h3 class="text-lg font-bold mb-4"><i class="fa fa-edit text-blue-500 mr-2"></i>编辑报销记录</h3>
             <div class="bg-yellow-50 border border-yellow-200 rounded p-2 mb-3 text-xs text-yellow-700">
-                <i class="fa fa-info-circle mr-1"></i>仅可在申请日期两天后编辑未审批或被拒绝的记录，修改将保存历史记录。
+                <i class="fa fa-info-circle mr-1"></i>仅可在申请日期两天后编辑未审批或被拒绝的记录，修改将保存历史记录，并重新进入待审批。
             </div>
             <form method="POST" action="expense.php" enctype="multipart/form-data">
                 <input type="hidden" name="action" value="edit">
+                <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($csrf_token, ENT_QUOTES); ?>">
                 <input type="hidden" name="id" id="edit-id">
                 <div class="mb-3">
                     <label class="block text-sm font-medium text-gray-700 mb-1">活动名称</label>
@@ -720,8 +663,8 @@ function get_editable_date($record) {
                     <textarea name="reason" id="edit-reason" rows="3" class="w-full border border-gray-300 rounded-lg px-3 py-2"></textarea>
                 </div>
                 <div class="mb-3">
-                    <label class="block text-sm font-medium text-gray-700 mb-1">新附件（可选）</label>
-                    <input type="file" name="attachment" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">新附件（可选，JPG / PNG / PDF，最大10MB）</label>
+                    <input type="file" accept=".jpg,.jpeg,.png,.pdf" name="attachment" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
                 </div>
                 <div class="mb-4">
                     <label class="block text-sm font-medium text-gray-700 mb-1">修改原因（必填）</label>
@@ -729,7 +672,7 @@ function get_editable_date($record) {
                 </div>
                 <div class="flex justify-end space-x-3">
                     <button type="button" onclick="hideModal('edit-modal')" class="px-4 py-2 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50">取消</button>
-                    <button type="submit" class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600">保存修改</button>
+                    <button type="submit" class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600">保存并提交审批</button>
                 </div>
             </form>
         </div>
@@ -741,6 +684,7 @@ function get_editable_date($record) {
             <h3 class="text-lg font-bold mb-4" id="approve-title">审批操作</h3>
             <form method="POST" action="expense.php">
                 <input type="hidden" name="action" value="approve">
+                <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($csrf_token, ENT_QUOTES); ?>">
                 <input type="hidden" name="id" id="approve-id">
                 <input type="hidden" name="status" id="approve-status">
                 <div class="mb-4">
@@ -849,17 +793,32 @@ function get_editable_date($record) {
         form.method = 'POST';
         form.action = 'expense.php';
         form.innerHTML = '<input type="hidden" name="action" value="delete"><input type="hidden" name="id" value="' + id + '">';
+        const token = document.createElement('input');
+        token.type = 'hidden'; token.name = 'csrf_token'; token.value = <?php echo json_encode($csrf_token); ?>;
+        form.appendChild(token);
         document.body.appendChild(form);
         form.submit();
     }
 
+    function escapeHtml(value) {
+        const node = document.createElement('span');
+        node.textContent = String(value == null ? '' : value);
+        return node.innerHTML;
+    }
+    let expenseHistory = [];
+    let historyRequest = 0;
     // 查看修改历史
     function viewHistory(expenseId) {
+        const request = ++historyRequest;
+        expenseHistory = [];
+        document.getElementById('history-content').textContent = '正在加载…';
         showModal('history-modal');
         fetch('expense_ajax.php?action=history&id=' + expenseId)
             .then(res => res.json())
             .then(data => {
+                if (request !== historyRequest) return;
                 if (data.success) {
+                    expenseHistory = data.history;
                     if (data.history.length === 0) {
                         document.getElementById('history-content').innerHTML = '<div class="text-center text-gray-400 py-8"><i class="fa fa-info-circle text-2xl"></i><p class="mt-2">暂无修改历史记录</p></div>';
                         return;
@@ -869,13 +828,13 @@ function get_editable_date($record) {
                         html += `
                         <div class="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 transition">
                             <div class="flex justify-between items-start mb-2">
-                                <span class="text-sm font-medium text-gray-700"><i class="fa fa-user-edit mr-1 text-purple-500"></i>${h.editor}</span>
-                                <span class="text-xs text-gray-400">${h.created_at}</span>
+                                <span class="text-sm font-medium text-gray-700"><i class="fa fa-user-edit mr-1 text-purple-500"></i>${escapeHtml(h.editor)}</span>
+                                <span class="text-xs text-gray-400">${escapeHtml(h.created_at)}</span>
                             </div>
                             <div class="text-xs text-gray-500 mb-2">
-                                <i class="fa fa-pencil-alt mr-1"></i>修改原因：${h.edit_reason || '（未填写）'}
+                                <i class="fa fa-pencil-alt mr-1"></i>修改原因：${escapeHtml(h.edit_reason || '（未填写）')}
                             </div>
-                            <button onclick="viewDetail('${h.old_data}', '${h.new_data}', '${h.created_at}', '${h.editor}')" class="text-xs text-blue-600 hover:text-blue-800">
+                            <button data-history-index="${index}" class="text-xs text-blue-600 hover:text-blue-800">
                                 <i class="fa fa-search mr-1"></i>查看修改详情
                             </button>
                         </div>`;
@@ -887,34 +846,83 @@ function get_editable_date($record) {
                 }
             })
             .catch(err => {
+                if (request !== historyRequest) return;
                 document.getElementById('history-content').innerHTML = '<div class="text-center text-red-400 py-8"><i class="fa fa-exclamation-circle text-2xl"></i><p class="mt-2">网络错误,请重试</p></div>';
             });
     }
 
+    document.getElementById('history-content').addEventListener('click', event => {
+        const button = event.target.closest('[data-history-index]');
+        if (!button) return;
+        const entry = expenseHistory[Number(button.dataset.historyIndex)];
+        if (entry) viewDetail(entry.old_data, entry.new_data, entry.created_at, entry.editor);
+    });
+
     // 查看修改详情对比
     function viewDetail(oldDataStr, newDataStr, time, editor) {
         let oldData = {}, newData = {};
-        try { oldData = JSON.parse(oldDataStr); } catch(e) {}
-        try { newData = JSON.parse(newDataStr); } catch(e) {}
+        try { oldData = JSON.parse(oldDataStr) || {}; } catch(e) {}
+        try { newData = JSON.parse(newDataStr) || {}; } catch(e) {}
 
-        let html = `<div class="mb-4 text-sm text-gray-500">编辑人：${editor} | 时间：${time}</div>`;
+        let html = `<div class="mb-4 text-sm text-gray-500">编辑人：${escapeHtml(editor)} | 时间：${escapeHtml(time)}</div>`;
         html += '<div class="overflow-x-auto"><table class="w-full text-sm border-collapse"><thead><tr class="bg-gray-100"><th class="px-4 py-2 text-left border">字段</th><th class="px-4 py-2 text-left border bg-red-50">修改前</th><th class="px-4 py-2 text-left border bg-green-50">修改后</th></tr></thead><tbody>';
 
-        const fields = {amount: '报销金额', reason: '报销事由', attachment: '附件'};
+        const fields = {amount: '报销金额', reason: '报销事由', attachment: '附件', status: '状态', approver: '审批人', lottery_record_id: '中奖记录编号'};
         for (const [key, label] of Object.entries(fields)) {
             let oldVal = oldData[key] || '（无）';
             let newVal = newData[key] || '（无）';
             const changed = oldVal !== newVal;
             html += `<tr class="border-b ${changed ? 'bg-yellow-50' : ''}">
                 <td class="px-4 py-2 border font-medium">${label} ${changed ? '<span class="text-orange-500 text-xs ml-1">[已修改]</span>' : ''}</td>
-                <td class="px-4 py-2 border text-red-700">${oldVal}</td>
-                <td class="px-4 py-2 border text-green-700">${newVal}</td>
+                <td class="px-4 py-2 border text-red-700">${escapeHtml(oldVal)}</td>
+                <td class="px-4 py-2 border text-green-700">${escapeHtml(newVal)}</td>
             </tr>`;
         }
         html += '</tbody></table></div>';
         document.getElementById('detail-content').innerHTML = html;
         showModal('detail-modal');
     }
+
+    // Prevent repeated submission while the current POST is pending.
+    document.querySelectorAll('form[method="POST"][action="expense.php"]').forEach(form => {
+        form.addEventListener('submit', event => {
+            if (form.dataset.submitting) { event.preventDefault(); return; }
+            form.dataset.submitting = '1';
+            form.querySelectorAll('button[type="submit"]').forEach(button => {
+                button.dataset.originalText = button.textContent;
+                button.disabled = true;
+                button.textContent = '正在提交…';
+            });
+        });
+    });
+    window.addEventListener('pageshow', () => {
+        document.querySelectorAll('form[data-submitting]').forEach(form => {
+            delete form.dataset.submitting;
+            form.querySelectorAll('button[data-original-text]').forEach(button => {
+                button.disabled = false;
+                button.textContent = button.dataset.originalText;
+                delete button.dataset.originalText;
+            });
+        });
+    });
+
+    <?php if ($error !== '' && in_array($action, ['add', 'edit'], true)): ?>
+    // Keep entered values after validation failure; browsers require reselecting files.
+    const failedAction = <?php echo json_encode($action); ?>;
+    const failedValues = <?php echo json_encode(array_intersect_key($_POST, array_flip(['id', 'project_id', 'expense_name', 'amount', 'reason', 'applicant', 'status', 'edit_reason'])), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
+    const failedModal = document.getElementById(failedAction + '-modal');
+    const failedForm = failedModal.querySelector('form');
+    Object.entries(failedValues).forEach(([name, value]) => {
+        const field = failedForm.elements.namedItem(name);
+        if (field && typeof value === 'string') field.value = value;
+    });
+    const validationMessage = document.createElement('p');
+    validationMessage.className = 'mb-3 text-sm text-red-600';
+    validationMessage.setAttribute('role', 'alert');
+    validationMessage.textContent = <?php echo json_encode($error . '；如需附件，请重新选择。', JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
+    failedForm.prepend(validationMessage);
+    showModal(failedAction + '-modal');
+    <?php endif; ?>
 
     // 自动隐藏消息横幅
     setTimeout(() => {
