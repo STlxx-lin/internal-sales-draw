@@ -141,10 +141,17 @@ if (!empty($_GET['msg'])) {
     $message = $_GET['msg'];
 }
 
-// 获取选定项目的奖品
+// 获取选定项目的奖品与配置
 $prizes = [];
 $total_probability = 0;
+$current_project_info = null;
 if ($selected_project_id) {
+    foreach ($projects as $pr) {
+        if ($pr['id'] == $selected_project_id) {
+            $current_project_info = $pr;
+            break;
+        }
+    }
     $stmt = $pdo->prepare("SELECT * FROM prizes WHERE project_id = ? ORDER BY sort_order, id");
     $stmt->execute([$selected_project_id]);
     $prizes = $stmt->fetchAll();
@@ -160,7 +167,7 @@ require dirname(__DIR__) . '/views/admin/header.php';
 ?>
 
 <div class="flex justify-between items-center mb-6 flex-wrap gap-4">
-    <div class="flex items-center space-x-4">
+    <div class="flex items-center space-x-4 flex-wrap gap-2">
         <h2 class="text-xl font-bold text-gray-800">奖品管理</h2>
         <select onchange="location.href='prizes.php?project_id='+this.value" class="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white">
             <?php foreach ($projects as $project): ?>
@@ -169,6 +176,23 @@ require dirname(__DIR__) . '/views/admin/header.php';
                 </option>
             <?php endforeach; ?>
         </select>
+        <?php if ($current_project_info): ?>
+        <form method="POST" action="projects.php" class="inline-flex items-center">
+            <input type="hidden" name="action" value="toggle_prize_level">
+            <input type="hidden" name="id" value="<?php echo $current_project_info['id']; ?>">
+            <input type="hidden" name="val" value="<?php echo empty($current_project_info['show_prize_level']) ? '1' : '0'; ?>">
+            <input type="hidden" name="redirect" value="prizes.php?project_id=<?php echo $current_project_info['id']; ?>">
+            <?php if (!empty($current_project_info['show_prize_level'])): ?>
+                <button type="submit" class="inline-flex items-center px-3 py-1.5 text-xs font-semibold rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition shadow-sm" title="点击关闭前端奖品等级显示（特等奖/一等奖等标签）">
+                    <i class="fa fa-toggle-on text-emerald-600 mr-1.5 text-sm"></i>前端奖品等级：已显示
+                </button>
+            <?php else: ?>
+                <button type="submit" class="inline-flex items-center px-3 py-1.5 text-xs font-semibold rounded-lg bg-gray-100 text-gray-600 border border-gray-300 hover:bg-gray-200 transition shadow-sm" title="点击开启前端奖品等级显示">
+                    <i class="fa fa-toggle-off text-gray-400 mr-1.5 text-sm"></i>前端奖品等级：已隐藏
+                </button>
+            <?php endif; ?>
+        </form>
+        <?php endif; ?>
     </div>
     <div class="flex space-x-3">
         <button onclick="showModal('add-prize-modal')" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg transition flex items-center">

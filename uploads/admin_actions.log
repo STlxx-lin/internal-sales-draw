@@ -49,3 +49,9 @@
 2026-09-22 17:21:45	127.0.0.1	admin	login	成功	管理员登录成功
 2026-09-22 17:22:07	127.0.0.1	admin	set_user_times	成功	{"user_id":27,"project_id":4,"times":12,"is_visible":1}
 2026-09-22 17:33:10	127.0.0.1	admin	edit_prize	成功	{"id":23,"project_id":4,"name":"超市卡100元*2","quantity":999999,"probability":1}
+2026-09-23 08:53:31	127.0.0.1	admin	toggle_prize_level	成功	{"id":4,"show_prize_level":0}
+2026-09-23 08:53:33	127.0.0.1	admin	toggle_prize_level	成功	{"id":4,"show_prize_level":1}
+2026-09-23 08:54:21	127.0.0.1	admin	toggle_prize_level	成功	{"id":4,"show_prize_level":0}
+2026-09-23 08:55:00	127.0.0.1	admin	toggle_prize_level	成功	{"id":3,"show_prize_level":0}
+2026-09-23 08:55:02	127.0.0.1	admin	toggle_prize_level	成功	{"id":2,"show_prize_level":0}
+2026-09-23 08:55:05	127.0.0.1	admin	toggle_prize_level	成功	{"id":1,"show_prize_level":0}

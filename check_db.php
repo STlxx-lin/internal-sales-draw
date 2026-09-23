@@ -35,6 +35,7 @@ $required_tables = [
             `id` INT(11) NOT NULL AUTO_INCREMENT,
             `name` VARCHAR(200) NOT NULL COMMENT '项目名称',
             `status` TINYINT(4) DEFAULT 1 COMMENT '状态：1-启用，0-禁用',
+            `show_prize_level` TINYINT(1) DEFAULT 1 COMMENT '前端是否显示奖品等级：1-显示，0-不显示',
             `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
             `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             PRIMARY KEY (`id`)

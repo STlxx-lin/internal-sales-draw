@@ -35,6 +35,8 @@ if (!$current_project) {
 }
 
 $remaining_times = $user_project ? $user_project['remaining_times'] : 0;
+// 是否在前端展示奖品等级（特等奖/一等奖等标签），默认开启
+$show_prize_level = isset($current_project['show_prize_level']) ? (int)$current_project['show_prize_level'] : 1;
 
 // 获取当前项目的奖品（过滤掉概率为0%的奖品，不在转盘和奖品池中显示）
 $stmt = $pdo->prepare("SELECT * FROM prizes WHERE project_id = ? AND probability > 0 ORDER BY sort_order, id");
@@ -272,7 +274,9 @@ foreach ($prizes as $p) {
     $prob_rank = array_search($prob, $distinct_probs);
     if ($prob_rank === false) $prob_rank = 99;
     
-    if ($prob_rank === 0) $level_name = '特等奖';
+    if (empty($show_prize_level)) {
+        $level_name = '';
+    } elseif ($prob_rank === 0) $level_name = '特等奖';
     elseif ($prob_rank === 1) $level_name = '一等奖';
     elseif ($prob_rank === 2) $level_name = '二等奖';
     elseif ($prob_rank === 3) $level_name = '三等奖';
@@ -353,10 +357,14 @@ for ($i = 0; $i < $segment_count; $i++):
     $y2 = 200 + 200 * sin($end_rad);
     $large_arc = ($angle_per_segment > 180) ? 1 : 0;
     
-    // 根据等级分配不同的扇区颜色与外圈高亮标签
+    // 根据等级（或统一交替色）分配扇区颜色与外圈标签
     if (!$item['is_win']) {
         $fill = 'url(#grad-tier-none)';
         $level_color = '#94a3b8';
+    } elseif (empty($show_prize_level)) {
+        // 当关闭等级显示时，采用优雅科技交替渐变色，统一呈现奖品
+        $fill = ($i % 2 === 0) ? 'url(#grad-tier-lucky-a)' : 'url(#grad-tier-lucky-b)';
+        $level_color = '#ffffff';
     } elseif ($item['level'] === '特等奖') {
         $fill = 'url(#grad-tier-0)';
         $level_color = '#fef08a';
@@ -376,22 +384,26 @@ for ($i = 0; $i < $segment_count; $i++):
     }
 
     $center_deg = $start_deg + ($angle_per_segment / 2);
-    // 字体大小
+    // 字体大小与排版位置自适应
     $font_size_lvl = $segment_count > 12 ? '9' : ($segment_count > 8 ? '10' : '11');
     $font_size_name = $segment_count > 12 ? '9.5' : ($segment_count > 8 ? '10.5' : '11.5');
     // 圆心是(200, 200)，半径是200，中心按钮半径大约50
-    // 外圈等级位置约在半径 160 处，内圈奖品名称约在半径 115 处，空间充裕绝不重叠
     $r_level = 160;
     $r_name  = 115;
 ?>
 <path d="M200 200 L<?php echo round($x1, 2); ?> <?php echo round($y1, 2); ?> A200 200 0 <?php echo $large_arc; ?> 1 <?php echo round($x2, 2); ?> <?php echo round($y2, 2); ?> Z" fill="<?php echo $fill; ?>" stroke="#1e1b4b" stroke-width="1.5"></path>
 
-<!-- 沿扇区中轴径向均匀排布：外圈较宽处为等级，内侧适度留白为奖品名称，绝不挤入中心按钮 -->
+<!-- 沿扇区中轴径向均匀排布：根据配置决定是否显示等级文字 -->
 <g transform="rotate(<?php echo $center_deg; ?> 200 200)" style="filter: drop-shadow(0 1px 2px rgba(0,0,0,0.9));">
-  <!-- 等级 (外圈 r=160) -->
-  <text x="<?php echo 200 + $r_level; ?>" y="200" fill="<?php echo $level_color; ?>" font-family="Rubik" font-size="<?php echo $font_size_lvl; ?>" font-weight="700" text-anchor="middle" dominant-baseline="central"><?php echo htmlspecialchars($item['level']); ?></text>
-  <!-- 奖品名称 (内层 r=115) -->
-  <text x="<?php echo 200 + $r_name; ?>" y="200" fill="#ffffff" font-size="<?php echo $font_size_name; ?>" font-weight="600" text-anchor="middle" dominant-baseline="central"><?php echo htmlspecialchars(mb_substr($item['name'], 0, 7)); ?></text>
+  <?php if (!empty($show_prize_level)): ?>
+    <!-- 等级 (外圈 r=160) -->
+    <text x="<?php echo 200 + $r_level; ?>" y="200" fill="<?php echo $level_color; ?>" font-family="Rubik" font-size="<?php echo $font_size_lvl; ?>" font-weight="700" text-anchor="middle" dominant-baseline="central"><?php echo htmlspecialchars($item['level']); ?></text>
+    <!-- 奖品名称 (内层 r=115) -->
+    <text x="<?php echo 200 + $r_name; ?>" y="200" fill="#ffffff" font-size="<?php echo $font_size_name; ?>" font-weight="600" text-anchor="middle" dominant-baseline="central"><?php echo htmlspecialchars(mb_substr($item['name'], 0, 7)); ?></text>
+  <?php else: ?>
+    <!-- 不显示等级时，奖品名称在扇区居中呈现 (r=138) -->
+    <text x="<?php echo 200 + 138; ?>" y="200" fill="#ffffff" font-size="<?php echo $segment_count > 12 ? '11' : ($segment_count > 8 ? '12.5' : '13.5'); ?>" font-weight="700" text-anchor="middle" dominant-baseline="central"><?php echo htmlspecialchars(mb_substr($item['name'], 0, 8)); ?></text>
+  <?php endif; ?>
 </g>
 <?php endfor; ?>
 </svg>
@@ -505,8 +517,14 @@ foreach ($prizes as $idx => $prize):
     $prob_rank = array_search($prob, $distinct_probs);
     if ($prob_rank === false) $prob_rank = 99;
 
-    // 确定等级名称与主题样式
-    if ($prob_rank === 0) {
+    // 确定等级名称与主题样式（未开启等级显示时使用统一品质风格）
+    if (empty($show_prize_level)) {
+        $tier_name = '';
+        $tier_tag_class = '';
+        $tier_card_class = 'border-outline-variant/40 bg-surface-container hover:border-primary/40';
+        $tier_icon_class = 'bg-primary-container/20 text-primary';
+        $tier_icon = 'featured_seasonal_and_gifts';
+    } elseif ($prob_rank === 0) {
         $tier_name = '特等奖';
         $tier_tag_class = 'bg-amber-500/25 text-amber-300 border border-amber-500/40 shadow-sm';
         $tier_card_class = 'border-amber-500/40 bg-gradient-to-b from-amber-500/10 to-surface-container';
@@ -540,8 +558,10 @@ foreach ($prizes as $idx => $prize):
 ?>
 <div class="relative rounded-xl p-4 bg-surface-container border <?php echo $tier_card_class; ?> flex flex-col justify-between transition-all hover:border-primary/50 <?php echo $is_empty ? 'opacity-40' : ''; ?>">
 <div class="flex items-center justify-between gap-1 mb-2">
-  <span class="text-[10px] font-bold px-2 py-0.5 rounded-full <?php echo $tier_tag_class; ?>"><?php echo $tier_name; ?></span>
-  <span class="text-[10px] text-on-surface-variant/80 font-mono"><?php echo number_format($prob, 1); ?>%</span>
+  <?php if (!empty($show_prize_level)): ?>
+    <span class="text-[10px] font-bold px-2 py-0.5 rounded-full <?php echo $tier_tag_class; ?>"><?php echo $tier_name; ?></span>
+  <?php endif; ?>
+  <span class="text-[10px] text-on-surface-variant/80 font-mono <?php echo empty($show_prize_level) ? 'ml-auto' : ''; ?>"><?php echo number_format($prob, 1); ?>%</span>
 </div>
 <div>
 <div class="w-12 h-12 rounded-xl <?php echo $tier_icon_class; ?> flex items-center justify-center mb-3">

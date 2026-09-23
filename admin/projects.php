@@ -12,25 +12,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         switch ($action) {
             case 'add_project':
                 $name = trim($_POST['name'] ?? '');
+                $show_prize_level = isset($_POST['show_prize_level']) ? (int)$_POST['show_prize_level'] : 1;
                 if (empty($name)) {
                     throw new Exception('项目名称不能为空');
                 }
-                $stmt = $pdo->prepare("INSERT INTO projects (name) VALUES (?)");
-                $stmt->execute([$name]);
-                logAdminAction('add_project', '成功', ['name' => $name], $admin_log_file);
+                $stmt = $pdo->prepare("INSERT INTO projects (name, show_prize_level) VALUES (?, ?)");
+                $stmt->execute([$name, $show_prize_level]);
+                logAdminAction('add_project', '成功', ['name' => $name, 'show_prize_level' => $show_prize_level], $admin_log_file);
                 header('Location: projects.php?msg=' . urlencode('项目添加成功'));
                 exit;
 
             case 'edit_project':
                 $id = (int)($_POST['id'] ?? 0);
                 $name = trim($_POST['name'] ?? '');
+                $show_prize_level = isset($_POST['show_prize_level']) ? (int)$_POST['show_prize_level'] : 1;
                 if (empty($name)) {
                     throw new Exception('项目名称不能为空');
                 }
-                $stmt = $pdo->prepare("UPDATE projects SET name = ? WHERE id = ?");
-                $stmt->execute([$name, $id]);
-                logAdminAction('edit_project', '成功', ['id' => $id, 'name' => $name], $admin_log_file);
+                $stmt = $pdo->prepare("UPDATE projects SET name = ?, show_prize_level = ? WHERE id = ?");
+                $stmt->execute([$name, $show_prize_level, $id]);
+                logAdminAction('edit_project', '成功', ['id' => $id, 'name' => $name, 'show_prize_level' => $show_prize_level], $admin_log_file);
                 header('Location: projects.php?msg=' . urlencode('项目更新成功'));
+                exit;
+
+            case 'toggle_prize_level':
+                $id = (int)($_POST['id'] ?? 0);
+                $val = (int)($_POST['val'] ?? 1);
+                $stmt = $pdo->prepare("UPDATE projects SET show_prize_level = ? WHERE id = ?");
+                $stmt->execute([$val, $id]);
+                logAdminAction('toggle_prize_level', '成功', ['id' => $id, 'show_prize_level' => $val], $admin_log_file);
+                $redirect = !empty($_POST['redirect']) ? $_POST['redirect'] : 'projects.php';
+                header('Location: ' . $redirect . (strpos($redirect, '?') !== false ? '&' : '?') . 'msg=' . urlencode('奖品等级显示设置已更新'));
                 exit;
 
             case 'delete_project':
@@ -76,6 +88,7 @@ require dirname(__DIR__) . '/views/admin/header.php';
             <tr>
                 <th class="px-6 py-3">ID</th>
                 <th class="px-6 py-3">项目名称</th>
+                <th class="px-6 py-3">奖品等级显示</th>
                 <th class="px-6 py-3">状态</th>
                 <th class="px-6 py-3">创建时间</th>
                 <th class="px-6 py-3">操作</th>
@@ -84,13 +97,29 @@ require dirname(__DIR__) . '/views/admin/header.php';
         <tbody>
             <?php if (empty($projects)): ?>
             <tr>
-                <td colspan="5" class="px-6 py-8 text-center text-gray-400">暂无项目，点击右上角添加项目</td>
+                <td colspan="6" class="px-6 py-8 text-center text-gray-400">暂无项目，点击右上角添加项目</td>
             </tr>
             <?php else: ?>
                 <?php foreach ($projects as $project): ?>
                 <tr class="bg-white border-b">
                     <td class="px-6 py-4"><?php echo $project['id']; ?></td>
                     <td class="px-6 py-4 font-medium text-gray-800"><?php echo htmlspecialchars($project['name']); ?></td>
+                    <td class="px-6 py-4">
+                        <form method="POST" action="projects.php" class="inline">
+                            <input type="hidden" name="action" value="toggle_prize_level">
+                            <input type="hidden" name="id" value="<?php echo $project['id']; ?>">
+                            <input type="hidden" name="val" value="<?php echo empty($project['show_prize_level']) ? '1' : '0'; ?>">
+                            <?php if (!empty($project['show_prize_level'])): ?>
+                                <button type="submit" class="inline-flex items-center px-2.5 py-1 text-xs font-semibold rounded-full bg-emerald-100 text-emerald-800 hover:bg-emerald-200 transition" title="点击关闭前端等级显示">
+                                    <i class="fa fa-toggle-on mr-1.5 text-sm text-emerald-600"></i>已开启显示
+                                </button>
+                            <?php else: ?>
+                                <button type="submit" class="inline-flex items-center px-2.5 py-1 text-xs font-semibold rounded-full bg-gray-100 text-gray-600 hover:bg-gray-200 transition" title="点击开启前端等级显示">
+                                    <i class="fa fa-toggle-off mr-1.5 text-sm text-gray-400"></i>已隐藏等级
+                                </button>
+                            <?php endif; ?>
+                        </form>
+                    </td>
                     <td class="px-6 py-4">
                         <span class="px-2 py-1 text-xs rounded-full <?php echo $project['status'] ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'; ?>">
                             <?php echo $project['status'] ? '启用' : '禁用'; ?>
@@ -99,7 +128,7 @@ require dirname(__DIR__) . '/views/admin/header.php';
                     <td class="px-6 py-4"><?php echo date('Y-m-d H:i', strtotime($project['created_at'])); ?></td>
                     <td class="px-6 py-4 whitespace-nowrap">
                         <div class="user-action-group">
-                            <button type="button" onclick="editProject(<?php echo $project['id']; ?>, '<?php echo htmlspecialchars($project['name'], ENT_QUOTES); ?>')" class="btn-action-icon btn-action-edit" title="编辑项目">
+                            <button type="button" onclick="editProject(<?php echo $project['id']; ?>, '<?php echo htmlspecialchars($project['name'], ENT_QUOTES); ?>', <?php echo (int)($project['show_prize_level'] ?? 1); ?>)" class="btn-action-icon btn-action-edit" title="编辑项目">
                                 <i class="fa fa-pencil-square-o"></i>
                             </button>
                             <button type="button" onclick="deleteProject(<?php echo $project['id']; ?>)" class="btn-action-icon btn-action-delete" title="删除项目">
@@ -124,6 +153,18 @@ require dirname(__DIR__) . '/views/admin/header.php';
                 <label class="block text-sm font-medium text-gray-700 mb-2">项目名称</label>
                 <input type="text" name="name" class="w-full border border-gray-300 rounded-lg px-3 py-2" required placeholder="请输入项目名称">
             </div>
+            <div class="mb-5 bg-gray-50 border border-gray-200 rounded-lg p-3">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <div class="text-sm font-medium text-gray-800">前端显示奖品等级</div>
+                        <div class="text-xs text-gray-500 mt-0.5">控制大转盘扇区和奖品卡片上的特等奖/一等奖等标签</div>
+                    </div>
+                    <label class="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" name="show_prize_level" value="1" checked class="sr-only peer">
+                        <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                    </label>
+                </div>
+            </div>
             <div class="flex justify-end space-x-3">
                 <button type="button" onclick="hideModal('add-project-modal')" class="px-4 py-2 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50">
                     取消
@@ -147,6 +188,18 @@ require dirname(__DIR__) . '/views/admin/header.php';
                 <label class="block text-sm font-medium text-gray-700 mb-2">项目名称</label>
                 <input type="text" name="name" id="edit-project-name" class="w-full border border-gray-300 rounded-lg px-3 py-2" required>
             </div>
+            <div class="mb-5 bg-gray-50 border border-gray-200 rounded-lg p-3">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <div class="text-sm font-medium text-gray-800">前端显示奖品等级</div>
+                        <div class="text-xs text-gray-500 mt-0.5">控制大转盘扇区和奖品卡片上的特等奖/一等奖等标签</div>
+                    </div>
+                    <label class="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" name="show_prize_level" id="edit-project-show-level" value="1" class="sr-only peer">
+                        <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                    </label>
+                </div>
+            </div>
             <div class="flex justify-end space-x-3">
                 <button type="button" onclick="hideModal('edit-project-modal')" class="px-4 py-2 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50">
                     取消
@@ -160,9 +213,10 @@ require dirname(__DIR__) . '/views/admin/header.php';
 </div>
 
 <script>
-function editProject(id, name) {
+function editProject(id, name, showLevel) {
     document.getElementById('edit-project-id').value = id;
     document.getElementById('edit-project-name').value = name;
+    document.getElementById('edit-project-show-level').checked = (parseInt(showLevel) === 1);
     showModal('edit-project-modal');
 }
 
