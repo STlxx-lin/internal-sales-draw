@@ -19,6 +19,8 @@ $offset = ($page - 1) * $per_page;
 // 筛选参数
 $project_filter = $_GET['project'] ?? '';
 $result_filter = $_GET['result'] ?? ''; // 'won' 或 'lost'
+$start_date = trim($_GET['start_date'] ?? '');
+$end_date = trim($_GET['end_date'] ?? '');
 
 // 构建查询条件
 $where_conditions = ['lr.user_id = ?'];
@@ -33,6 +35,16 @@ if ($result_filter === 'won') {
     $where_conditions[] = 'lr.prize_id IS NOT NULL';
 } elseif ($result_filter === 'lost') {
     $where_conditions[] = 'lr.prize_id IS NULL';
+}
+
+if ($start_date && preg_match('/^\d{4}-\d{2}-\d{2}$/', $start_date)) {
+    $where_conditions[] = 'lr.created_at >= ?';
+    $params[] = $start_date . ' 00:00:00';
+}
+
+if ($end_date && preg_match('/^\d{4}-\d{2}-\d{2}$/', $end_date)) {
+    $where_conditions[] = 'lr.created_at <= ?';
+    $params[] = $end_date . ' 23:59:59';
 }
 
 $where_clause = implode(' AND ', $where_conditions);
@@ -80,256 +92,412 @@ $stmt = $pdo->prepare($stats_sql);
 $stmt->execute([$user['id']]);
 $stats = $stmt->fetch();
 
+// 待核销/报销总数计算
+$pending_sql = "
+    SELECT COUNT(*) as total_pending
+    FROM lottery_records lr
+    WHERE lr.user_id = ? AND lr.prize_id IS NOT NULL
+      AND NOT EXISTS (
+          SELECT 1 FROM expense_records er 
+          WHERE er.project_id = lr.project_id 
+            AND er.user_id = lr.user_id 
+            AND er.is_used = 1 
+            AND er.reason REGEXP CONCAT('抽奖记录 #', lr.id, '([^0-9]|$)')
+      )
+";
+$stmt = $pdo->prepare($pending_sql);
+$stmt->execute([$user['id']]);
+$total_pending = (int)($stmt->fetch()['total_pending'] ?? 0);
+$total_completed = max(0, (int)$stats['total_wins'] - $total_pending);
+
+// 用户可用剩余抽奖总资格
+$stmt = $pdo->prepare("SELECT COALESCE(SUM(remaining_times), 0) as total_remaining FROM user_project_times WHERE user_id = ? AND is_visible = 1");
+$stmt->execute([$user['id']]);
+$total_remaining_times = (int)($stmt->fetch()['total_remaining'] ?? 0);
+
 $win_rate = $stats['total_draws'] > 0 ? round(($stats['total_wins'] / $stats['total_draws']) * 100, 2) : 0;
 ?>
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>抽奖历史 - <?php echo SITE_NAME; ?></title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
-</head>
-<body class="bg-gradient-to-br from-purple-400 via-pink-500 to-red-500 min-h-screen">
-    <div class="container mx-auto px-4 py-8">
-        <!-- 头部导航 -->
-        <div class="bg-white rounded-lg shadow-lg p-6 mb-8">
-            <div class="flex justify-between items-center">
-                <h1 class="text-3xl font-bold text-gray-800">
-                    <i class="fa fa-history text-green-500 mr-2"></i>
-                    抽奖历史
-                </h1>
-                <div class="flex space-x-4">
-                    <a href="index.php" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg transition">
-                        <i class="fa fa-home mr-2"></i>返回首页
-                    </a>
-                    <a href="admin.php" class="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded-lg transition">
-                        <i class="fa fa-cog mr-2"></i>管理后台
-                    </a>
-                </div>
-            </div>
-        </div>
-
-        <!-- 用户信息和统计 -->
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-            <!-- 用户信息 -->
-            <div class="bg-white rounded-lg shadow-lg p-6">
-                <div class="flex items-center">
-                    <div class="bg-blue-100 p-3 rounded-full">
-                        <i class="fa fa-user text-blue-600 text-xl"></i>
-                    </div>
-                    <div class="ml-4">
-                        <h3 class="text-lg font-semibold text-gray-800"><?php echo htmlspecialchars($user['name']); ?></h3>
-                        <p class="text-sm text-gray-500"><?php echo htmlspecialchars($user['ip_address']); ?></p>
-                    </div>
-                </div>
-            </div>
-
-            <!-- 总抽奖次数 -->
-            <div class="bg-white rounded-lg shadow-lg p-6">
-                <div class="flex items-center">
-                    <div class="bg-purple-100 p-3 rounded-full">
-                        <i class="fa fa-dice text-purple-600 text-xl"></i>
-                    </div>
-                    <div class="ml-4">
-                        <h3 class="text-2xl font-bold text-gray-800"><?php echo $stats['total_draws']; ?></h3>
-                        <p class="text-sm text-gray-500">总抽奖次数</p>
-                    </div>
-                </div>
-            </div>
-
-            <!-- 中奖次数 -->
-            <div class="bg-white rounded-lg shadow-lg p-6">
-                <div class="flex items-center">
-                    <div class="bg-green-100 p-3 rounded-full">
-                        <i class="fa fa-trophy text-green-600 text-xl"></i>
-                    </div>
-                    <div class="ml-4">
-                        <h3 class="text-2xl font-bold text-gray-800"><?php echo $stats['total_wins']; ?></h3>
-                        <p class="text-sm text-gray-500">中奖次数</p>
-                    </div>
-                </div>
-            </div>
-
-            <!-- 中奖率 -->
-            <div class="bg-white rounded-lg shadow-lg p-6">
-                <div class="flex items-center">
-                    <div class="bg-yellow-100 p-3 rounded-full">
-                        <i class="fa fa-percentage text-yellow-600 text-xl"></i>
-                    </div>
-                    <div class="ml-4">
-                        <h3 class="text-2xl font-bold text-gray-800"><?php echo $win_rate; ?>%</h3>
-                        <p class="text-sm text-gray-500">中奖率</p>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- 筛选器 -->
-        <div class="bg-white rounded-lg shadow-lg p-6 mb-8">
-            <h2 class="text-xl font-bold text-gray-800 mb-4">
-                <i class="fa fa-filter text-blue-500 mr-2"></i>筛选条件
-            </h2>
-            <form method="GET" class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">项目</label>
-                    <select name="project" class="w-full border border-gray-300 rounded-lg px-3 py-2">
-                        <option value="">所有项目</option>
-                        <?php foreach ($projects as $project): ?>
-                            <option value="<?php echo $project['id']; ?>" <?php echo $project['id'] == $project_filter ? 'selected' : ''; ?>>
-                                <?php echo htmlspecialchars($project['name']); ?>
-                            </option>
-                        <?php endforeach; ?>
-                    </select>
-                </div>
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">结果</label>
-                    <select name="result" class="w-full border border-gray-300 rounded-lg px-3 py-2">
-                        <option value="">所有结果</option>
-                        <option value="won" <?php echo $result_filter === 'won' ? 'selected' : ''; ?>>中奖</option>
-                        <option value="lost" <?php echo $result_filter === 'lost' ? 'selected' : ''; ?>>未中奖</option>
-                    </select>
-                </div>
-                <div class="flex items-end">
-                    <button type="submit" class="w-full bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg transition">
-                        <i class="fa fa-search mr-2"></i>筛选
-                    </button>
-                </div>
-            </form>
-        </div>
-
-        <!-- 抽奖记录 -->
-        <div class="bg-white rounded-lg shadow-lg">
-            <div class="p-6 border-b border-gray-200">
-                <div class="flex justify-between items-center">
-                    <h2 class="text-xl font-bold text-gray-800">
-                        <i class="fa fa-list text-purple-500 mr-2"></i>抽奖记录
-                    </h2>
-                    <div class="text-sm text-gray-500">
-                        共 <?php echo $total_records; ?> 条记录，第 <?php echo $page; ?>/<?php echo $total_pages; ?> 页
-                    </div>
-                </div>
-            </div>
-
-            <?php if (empty($records)): ?>
-                <div class="p-12 text-center">
-                    <i class="fa fa-inbox text-gray-400 text-6xl mb-4"></i>
-                    <h3 class="text-xl font-semibold text-gray-600 mb-2">暂无抽奖记录</h3>
-                    <p class="text-gray-500">您还没有参与过抽奖活动</p>
-                    <a href="index.php" class="inline-block mt-4 bg-blue-500 hover:bg-blue-600 text-white px-6 py-2 rounded-lg transition">
-                        <i class="fa fa-dice mr-2"></i>立即抽奖
-                    </a>
-                </div>
-            <?php else: ?>
-                <div class="overflow-x-auto">
-                    <table class="w-full text-sm text-left">
-                        <thead class="text-xs text-gray-700 uppercase bg-gray-50">
-                            <tr>
-                                <th class="px-6 py-3">时间</th>
-                                <th class="px-6 py-3">项目</th>
-                                <th class="px-6 py-3">结果</th>
-                                <th class="px-6 py-3">状态</th>
-                                <th class="px-6 py-3">IP地址</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <?php foreach ($records as $record): ?>
-                            <tr class="bg-white border-b hover:bg-gray-50">
-                                <td class="px-6 py-4">
-                                    <div class="text-sm font-medium text-gray-900">
-                                        <?php echo date('Y-m-d', strtotime($record['created_at'])); ?>
-                                    </div>
-                                    <div class="text-sm text-gray-500">
-                                        <?php echo date('H:i:s', strtotime($record['created_at'])); ?>
-                                    </div>
-                                </td>
-                                <td class="px-6 py-4">
-                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                                        <?php echo htmlspecialchars($record['project_name']); ?>
-                                    </span>
-                                </td>
-                                <td class="px-6 py-4">
-                                    <?php if ($record['prize_name']): ?>
-                                        <div class="flex items-center">
-                                            <i class="fa fa-trophy text-yellow-500 mr-2"></i>
-                                            <span class="text-green-600 font-medium"><?php echo htmlspecialchars($record['prize_name']); ?></span>
-                                        </div>
-                                    <?php else: ?>
-                                        <div class="flex items-center">
-                                            <i class="fa fa-times-circle text-gray-400 mr-2"></i>
-                                            <span class="text-gray-500">未中奖</span>
-                                        </div>
-                                    <?php endif; ?>
-                                </td>
-                                <td class="px-6 py-4">
-                                    <?php if ($record['prize_name']): ?>
-                                        <?php if ($record['is_used']): ?>
-                                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">已报销</span>
-                                        <?php else: ?>
-                                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">未报销</span>
-                                        <?php endif; ?>
-                                    <?php else: ?>
-                                        <span class="text-gray-400">-</span>
-                                    <?php endif; ?>
-                                </td>
-                                <td class="px-6 py-4 text-sm text-gray-500">
-                                    <?php echo htmlspecialchars($record['ip_address']); ?>
-                                </td>
-                            </tr>
-                            <?php endforeach; ?>
-                        </tbody>
-                    </table>
-                </div>
-
-                <!-- 分页 -->
-                <?php if ($total_pages > 1): ?>
-                <div class="px-6 py-4 border-t border-gray-200">
-                    <div class="flex items-center justify-between">
-                        <div class="text-sm text-gray-700">
-                            显示第 <?php echo $offset + 1; ?> 到 <?php echo min($offset + $per_page, $total_records); ?> 条，共 <?php echo $total_records; ?> 条记录
-                        </div>
-                        <div class="flex space-x-2">
-                            <?php if ($page > 1): ?>
-                                <a href="?page=<?php echo $page - 1; ?>&project=<?php echo urlencode($project_filter); ?>&result=<?php echo urlencode($result_filter); ?>" 
-                                   class="px-3 py-2 text-sm font-medium text-gray-500 bg-white border border-gray-300 rounded-lg hover:bg-gray-50">
-                                    <i class="fa fa-chevron-left mr-1"></i>上一页
-                                </a>
-                            <?php endif; ?>
-
-                            <?php
-                            $start_page = max(1, $page - 2);
-                            $end_page = min($total_pages, $page + 2);
-                            
-                            for ($i = $start_page; $i <= $end_page; $i++):
-                            ?>
-                                <a href="?page=<?php echo $i; ?>&project=<?php echo urlencode($project_filter); ?>&result=<?php echo urlencode($result_filter); ?>" 
-                                   class="px-3 py-2 text-sm font-medium <?php echo $i == $page ? 'text-blue-600 bg-blue-50 border-blue-500' : 'text-gray-500 bg-white border-gray-300 hover:bg-gray-50'; ?> border rounded-lg">
-                                    <?php echo $i; ?>
-                                </a>
-                            <?php endfor; ?>
-
-                            <?php if ($page < $total_pages): ?>
-                                <a href="?page=<?php echo $page + 1; ?>&project=<?php echo urlencode($project_filter); ?>&result=<?php echo urlencode($result_filter); ?>" 
-                                   class="px-3 py-2 text-sm font-medium text-gray-500 bg-white border border-gray-300 rounded-lg hover:bg-gray-50">
-                                    下一页<i class="fa fa-chevron-right ml-1"></i>
-                                </a>
-                            <?php endif; ?>
-                        </div>
-                    </div>
-                </div>
-                <?php endif; ?>
-            <?php endif; ?>
-        </div>
+<!DOCTYPE html><html class="dark" lang="zh-CN" style=""><head>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"></head><body class="bg-surface font-body-md text-on-surface antialiased min-h-screen flex flex-col selection:bg-primary-container selection:text-white"><svg aria-hidden="true" class="inline-defs-container" style="position:absolute;width:0;height:0;overflow:hidden"></svg>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<meta content="web_standard" name="shell-type">
+<title>我的抽奖战绩 - <?php echo SITE_NAME; ?></title>
+<style>
+    @layer base {
+      html, body { margin: 0; padding: 0; }
+      body { overscroll-behavior: none; }
+      main > :first-child { margin-top: 0 !important; }
+      main > :last-child { margin-bottom: 0 !important; }
+    }
+    ::-webkit-scrollbar { display: none; }
+  </style>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          "colors": {
+            "on-surface-variant": "#ccc3d8",
+            "surface-bright": "#31394d",
+            "secondary-fixed-dim": "#ffb2b7",
+            "background": "#0b1326",
+            "error": "#ffb4ab",
+            "on-secondary": "#67001b",
+            "surface-container-high": "#222a3d",
+            "surface-container-highest": "#2d3449",
+            "surface-container-lowest": "#060e20",
+            "on-tertiary-fixed-variant": "#5c4300",
+            "primary": "#d2bbff",
+            "secondary-fixed": "#ffdadb",
+            "on-secondary-fixed-variant": "#92002a",
+            "on-error-container": "#ffdad6",
+            "surface-tint": "#d2bbff",
+            "tertiary-fixed-dim": "#f9bd22",
+            "inverse-primary": "#732ee4",
+            "on-background": "#dae2fd",
+            "surface-container-low": "#131b2e",
+            "surface-container": "#171f33",
+            "surface-variant": "#2d3449",
+            "on-primary-fixed": "#25005a",
+            "surface-dim": "#0b1326",
+            "secondary-container": "#b50036",
+            "on-primary-fixed-variant": "#5a00c6",
+            "tertiary-fixed": "#ffdf9f",
+            "primary-fixed-dim": "#d2bbff",
+            "on-tertiary-fixed": "#261a00",
+            "on-primary-container": "#ede0ff",
+            "inverse-surface": "#dae2fd",
+            "surface": "#0b1326",
+            "on-tertiary-container": "#ffe2ab",
+            "on-tertiary": "#402d00",
+            "secondary": "#ffb2b7",
+            "on-secondary-container": "#ffc2c4",
+            "on-primary": "#3f008e",
+            "inverse-on-surface": "#283044",
+            "on-secondary-fixed": "#40000d",
+            "on-surface": "#dae2fd",
+            "tertiary-container": "#836100",
+            "primary-container": "#7c3aed",
+            "on-error": "#690005",
+            "primary-fixed": "#eaddff",
+            "error-container": "#93000a",
+            "tertiary": "#f9bd22",
+            "outline": "#958da1",
+            "outline-variant": "#4a4455"
+          },
+          "borderRadius": {
+            "DEFAULT": "1rem",
+            "lg": "2rem",
+            "xl": "3rem",
+            "full": "9999px"
+          },
+          "spacing": {
+            "margin": "1.5rem",
+            "space-md": "1rem",
+            "space-xs": "0.25rem",
+            "space-xl": "2.5rem",
+            "gutter": "1.5rem",
+            "space-lg": "1.5rem",
+            "space-sm": "0.5rem"
+          },
+          "fontFamily": {
+            "body-sm": ["Plus Jakarta Sans"],
+            "label-md": ["Plus Jakarta Sans"],
+            "headline-xl": ["Rubik"],
+            "body-lg": ["Plus Jakarta Sans"],
+            "label-lg": ["Plus Jakarta Sans"],
+            "headline-md": ["Rubik"],
+            "headline-lg": ["Rubik"],
+            "body-md": ["Plus Jakarta Sans"],
+            "headline-sm": ["Rubik"]
+          }
+        },
+      },
+    }
+  </script>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&amp;family=Rubik:wght@500;600;700&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<!-- Top Navigation Bar -->
+<header class="fixed top-0 w-full z-50 bg-surface/80 backdrop-blur-xl border-b border-outline-variant/30 shadow-[0_1px_16px_rgba(0,0,0,0.25)]">
+<div class="h-20 max-w-7xl mx-auto px-gutter flex items-center justify-between">
+<div class="flex items-center gap-space-lg">
+<a class="font-headline-md text-primary tracking-tight flex items-center gap-2" data-path="首页" href="index.php">
+<span class="material-symbols-outlined text-primary text-28px">auto_awesome</span>
+<span class=""><?php echo SITE_NAME; ?></span>
+</a>
+<nav class="hidden md:flex items-center gap-space-sm p-1.5 bg-surface-container/70 backdrop-blur-md rounded-full border border-outline-variant/30" data-active-classes="bg-primary-container text-on-primary-container font-semibold rounded-full">
+<a class="px-space-md py-space-sm text-body-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-bright/50 rounded-full transition-all" data-path="幸运抽奖" href="index.php">幸运抽奖</a>
+<a class="px-space-md py-space-sm transition-all bg-primary-container text-on-primary-container font-semibold rounded-full shadow-md shadow-primary-container/25" data-path="我的战绩" href="history.php">我的战绩</a>
+<a class="px-space-md py-space-sm text-body-sm text-on-surface-variant hover:text-on-surface hover:bg-surface-bright/50 rounded-full transition-all" data-path="管理后台" href="admin.php">管理后台</a>
+</nav>
+</div>
+<div class="flex items-center gap-space-md">
+<div class="hidden sm:flex items-center gap-space-sm bg-surface-container-high/90 border border-outline-variant/40 px-4 py-2 rounded-full">
+<span class="material-symbols-outlined text-primary text-[20px]">badge</span>
+<span class="text-body-sm font-medium text-on-surface"><?php echo htmlspecialchars($user['name']); ?> <span class="text-on-surface-variant text-xs">(IP: <?php echo htmlspecialchars($user['ip_address']); ?>)</span></span>
+</div>
+<div class="w-10 h-10 rounded-full bg-gradient-to-tr from-primary-container to-primary flex items-center justify-center cursor-pointer shadow-[0_0_15px_rgba(210,187,255,0.35)] ring-2 ring-primary/30">
+<span class="material-symbols-outlined text-on-primary text-[20px]">person</span>
+</div>
+</div>
+</div>
+</header>
+<!-- Main Content Canvas -->
+<main class="w-full pt-24 pb-16 bg-surface flex-1"><div class="flex flex-col w-full">
+<div class="max-w-7xl mx-auto w-full px-gutter">
+<!-- Breadcrumb & Page Identifier -->
+<div class="flex flex-wrap items-center justify-between gap-4 mb-space-lg">
+<div class="flex items-center gap-space-sm">
+<span class="material-symbols-outlined text-primary text-[20px]">military_tech</span>
+<span class="font-headline-sm text-headline-sm text-on-surface">我的抽奖战绩</span>
+<span class="inline-flex items-center px-3 py-1 rounded-full bg-surface-container-high text-on-surface-variant font-label-md text-label-md tracking-wider">
+  用户：<?php echo htmlspecialchars($user['name']); ?> · IP：<?php echo htmlspecialchars($user['ip_address']); ?>
+</span>
+</div>
+<div class="flex items-center gap-2">
+<a class="px-4 py-1.5 rounded-full bg-surface-container-high hover:bg-surface-bright text-on-surface text-body-sm font-label-lg transition-colors flex items-center gap-1.5" href="index.php">
+<span class="material-symbols-outlined text-tertiary text-[18px]">casino</span>
+  返回抽奖大厅
+</a>
+</div>
+</div>
+<!-- Top Bento Stats Grid -->
+<div class="grid grid-cols-1 md:grid-cols-3 gap-space-md mb-space-xl">
+<div class="bg-surface-container-low rounded-DEFAULT p-space-lg flex items-center justify-between shadow-sm border border-outline-variant/30">
+  <div>
+    <span class="text-on-surface-variant font-label-md text-label-md block mb-1">累计获得奖品</span>
+    <div class="flex items-baseline gap-2">
+      <span class="font-headline-xl text-headline-xl text-primary leading-none"><?php echo (int)$stats['total_wins']; ?></span>
+      <span class="text-body-sm text-on-surface-variant">件 (共抽 <?php echo (int)$stats['total_draws']; ?> 次)</span>
     </div>
+  </div>
+  <div class="w-12 h-12 rounded-full bg-primary-container/20 flex items-center justify-center text-primary">
+    <span class="material-symbols-outlined text-[24px]">emoji_events</span>
+  </div>
+</div>
+<div class="bg-surface-container-low rounded-DEFAULT p-space-lg flex items-center justify-between shadow-sm border border-outline-variant/30">
+  <div>
+    <span class="text-on-surface-variant font-label-md text-label-md block mb-1">待报销奖品</span>
+    <div class="flex items-baseline gap-2">
+      <span class="font-headline-xl text-headline-xl text-secondary leading-none"><?php echo (int)$total_pending; ?></span>
+      <span class="text-body-sm text-on-surface-variant">件待审批或报销</span>
+    </div>
+  </div>
+  <div class="w-12 h-12 rounded-full bg-secondary-container/20 flex items-center justify-center text-secondary">
+    <span class="material-symbols-outlined text-[24px]">pending_actions</span>
+  </div>
+</div>
+<div class="bg-surface-container-low rounded-DEFAULT p-space-lg flex items-center justify-between shadow-sm border border-outline-variant/30">
+  <div>
+    <span class="text-on-surface-variant font-label-md text-label-md block mb-1">剩余抽奖配额</span>
+    <div class="flex items-baseline gap-2">
+      <span class="font-headline-xl text-headline-xl text-tertiary leading-none"><?php echo (int)$total_remaining_times; ?></span>
+      <span class="text-body-sm text-on-surface-variant">次当前可用</span>
+    </div>
+  </div>
+  <div class="w-12 h-12 rounded-full bg-tertiary-container/30 flex items-center justify-center text-tertiary">
+    <span class="material-symbols-outlined text-[24px]">toll</span>
+  </div>
+</div>
+</div>
 
-    <script>
-    // 自动提交筛选表单
-    document.querySelectorAll('select[name="project"], select[name="result"]').forEach(select => {
-        select.addEventListener('change', function() {
-            this.form.submit();
+<!-- Filter Tabs & Batch Controls -->
+<div class="flex flex-wrap items-center justify-between gap-4 mb-space-lg">
+<div class="inline-flex p-1 rounded-full bg-surface-container-low border border-outline-variant/30 flex-wrap">
+  <button class="px-5 py-2 rounded-full font-label-md text-label-md transition-all bg-primary-container text-on-primary-container shadow-sm" id="tab-btn-all" onclick="filterTab('all')">全部 (<?php echo count($records); ?>)</button>
+  <button class="px-5 py-2 rounded-full font-label-md text-label-md transition-all text-on-surface-variant hover:text-on-surface" id="tab-btn-pending" onclick="filterTab('pending')">待报销</button>
+  <button class="px-5 py-2 rounded-full font-label-md text-label-md transition-all text-on-surface-variant hover:text-on-surface" id="tab-btn-completed" onclick="filterTab('completed')">已发放/已报销</button>
+  <button class="px-5 py-2 rounded-full font-label-md text-label-md transition-all text-on-surface-variant hover:text-on-surface" id="tab-btn-history" onclick="filterTab('history')">全部抽奖足迹</button>
+</div>
+
+<!-- 筛选工具集：时间范围筛选 + 项目活动下拉 -->
+<form method="GET" id="filter-form" class="flex flex-wrap items-center gap-2.5">
+  <!-- 时间范围筛选 -->
+  <div class="flex items-center gap-1.5 bg-surface-container-high border border-outline-variant/40 rounded-full px-3 py-1.5 shadow-sm">
+    <span class="material-symbols-outlined text-[16px] text-primary">calendar_today</span>
+    <span class="text-[11px] text-on-surface-variant">时间:</span>
+    <input type="date" name="start_date" value="<?php echo htmlspecialchars($start_date); ?>" class="bg-transparent text-xs text-on-surface focus:outline-none cursor-pointer w-28" title="开始日期" onchange="this.form.submit()">
+    <span class="text-xs text-outline">至</span>
+    <input type="date" name="end_date" value="<?php echo htmlspecialchars($end_date); ?>" class="bg-transparent text-xs text-on-surface focus:outline-none cursor-pointer w-28" title="结束日期" onchange="this.form.submit()">
+    <?php if ($start_date || $end_date): ?>
+      <a href="?project=<?php echo urlencode($project_filter); ?>&result=<?php echo urlencode($result_filter); ?>" class="text-[11px] text-primary hover:text-white ml-1 px-1.5 py-0.5 rounded bg-primary/20 hover:bg-primary/40 transition-colors" title="清除时间筛选">重置</a>
+    <?php endif; ?>
+  </div>
+
+  <!-- 项目筛选下拉 -->
+  <div class="flex items-center">
+    <select name="project" onchange="this.form.submit()" class="bg-surface-container-high text-xs text-on-surface border border-outline-variant/40 rounded-full px-3.5 py-2 focus:outline-none focus:ring-1 focus:ring-primary shadow-sm cursor-pointer">
+      <option value="">所有抽奖活动</option>
+      <?php foreach ($projects as $p): ?>
+        <option value="<?php echo $p['id']; ?>" <?php echo $p['id'] == $project_filter ? 'selected' : ''; ?>>
+          <?php echo htmlspecialchars($p['name']); ?>
+        </option>
+      <?php endforeach; ?>
+    </select>
+  </div>
+
+  <?php if ($result_filter): ?>
+    <input type="hidden" name="result" value="<?php echo htmlspecialchars($result_filter); ?>">
+  <?php endif; ?>
+
+  <div class="text-xs text-outline hidden xl:flex items-center gap-1.5 ml-1">
+    <span class="material-symbols-outlined text-[16px] text-primary">verified</span>
+    <span>数据实时同步后台</span>
+  </div>
+</form>
+</div>
+
+<!-- Reward Cards Container -->
+<div class="space-y-space-md mb-space-xl" id="rewards-container">
+<?php if (empty($records)): ?>
+  <div class="bg-surface-container-low rounded-DEFAULT p-12 text-center border border-outline-variant/30">
+    <span class="material-symbols-outlined text-outline text-5xl mb-3">inbox</span>
+    <h3 class="font-headline-sm text-base text-on-surface font-semibold mb-1">暂无抽奖记录</h3>
+    <p class="text-xs text-on-surface-variant mb-4">参与抽奖后，所有的获奖成果都将归档于此</p>
+    <a href="index.php" class="px-5 py-2 rounded-full bg-primary-container text-on-primary-container text-xs font-semibold shadow-sm inline-flex items-center gap-1.5">
+      <span class="material-symbols-outlined text-sm">casino</span> 前往抽奖
+    </a>
+  </div>
+<?php else: ?>
+  <?php foreach ($records as $row): 
+    $is_win = !empty($row['prize_id']);
+    $is_used = !empty($row['is_used']);
+    $item_class = !$is_win ? 'reward-history' : ($is_used ? 'reward-completed' : 'reward-pending');
+  ?>
+  <div class="reward-item <?php echo $item_class; ?> bg-surface-container-low rounded-DEFAULT p-5 transition-all hover:bg-surface-container flex flex-col sm:flex-row sm:items-center justify-between gap-4 border border-outline-variant/30 shadow-sm <?php echo !$is_win ? 'opacity-75' : ''; ?>">
+    <div class="flex items-center gap-4">
+      <div class="w-12 h-12 rounded-DEFAULT <?php echo !$is_win ? 'bg-surface-container-high text-outline' : ($is_used ? 'bg-primary-container/20 text-primary' : 'bg-secondary-container/20 text-secondary'); ?> flex-shrink-0 flex items-center justify-center">
+        <span class="material-symbols-outlined text-[26px]">
+          <?php echo !$is_win ? 'sentiment_dissatisfied' : ($is_used ? 'verified' : 'card_giftcard'); ?>
+        </span>
+      </div>
+      <div>
+        <div class="flex items-center gap-2 flex-wrap">
+          <h3 class="font-headline-sm text-body-lg font-semibold text-on-surface">
+            <?php echo htmlspecialchars($row['prize_name'] ?: '未中奖 (谢谢参与)'); ?>
+          </h3>
+          <?php if (!$is_win): ?>
+            <span class="px-2 py-0.5 rounded-full bg-surface-container-high text-outline text-xs font-label-md">足迹</span>
+          <?php elseif ($is_used): ?>
+            <span class="px-2 py-0.5 rounded-full bg-surface-container-high text-on-surface-variant text-xs font-label-md">已发放 / 已报销</span>
+          <?php else: ?>
+            <span class="px-2 py-0.5 rounded-full bg-secondary-container/30 text-secondary text-xs font-label-md">待报销</span>
+          <?php endif; ?>
+        </div>
+        <div class="text-xs text-on-surface-variant mt-1">
+          <?php echo date('Y-m-d H:i', strtotime($row['created_at'])); ?> · <?php echo htmlspecialchars($row['project_name']); ?>
+          <span class="font-mono text-outline ml-2">#<?php echo (int)$row['id']; ?></span>
+        </div>
+      </div>
+    </div>
+    
+    <div class="flex items-center gap-2 sm:self-center">
+      <?php if ($is_win && !$is_used): ?>
+        <span class="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-secondary-container/20 text-secondary text-xs font-semibold border border-secondary-container/30">
+          <span class="w-1.5 h-1.5 rounded-full bg-secondary animate-pulse"></span>
+          待报销
+        </span>
+      <?php elseif ($is_win && $is_used): ?>
+        <span class="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-emerald-500/20 text-emerald-300 text-xs font-semibold border border-emerald-500/30">
+          <span class="material-symbols-outlined text-[16px]">check_circle</span>
+          已报销
+        </span>
+      <?php else: ?>
+        <span class="text-xs text-outline px-3 py-1">未中奖</span>
+      <?php endif; ?>
+    </div>
+  </div>
+  <?php endforeach; ?>
+<?php endif; ?>
+</div>
+
+<!-- 分页栏 -->
+<?php if ($total_pages > 1): ?>
+<div class="flex items-center justify-between pb-6 text-xs text-on-surface-variant">
+  <div>共 <?php echo $total_records; ?> 条记录 · 当前第 <?php echo $page; ?> / <?php echo $total_pages; ?> 页</div>
+  <div class="flex items-center gap-2">
+    <?php 
+      $page_query = '&project=' . urlencode($project_filter) . '&result=' . urlencode($result_filter) . '&start_date=' . urlencode($start_date) . '&end_date=' . urlencode($end_date);
+    ?>
+    <?php if ($page > 1): ?>
+      <a href="?page=<?php echo $page - 1 . $page_query; ?>" class="px-3 py-1.5 rounded-full bg-surface-container-high hover:bg-surface-bright text-on-surface transition">上一页</a>
+    <?php endif; ?>
+    <?php if ($page < $total_pages): ?>
+      <a href="?page=<?php echo $page + 1 . $page_query; ?>" class="px-3 py-1.5 rounded-full bg-surface-container-high hover:bg-surface-bright text-on-surface transition">下一页</a>
+    <?php endif; ?>
+  </div>
+</div>
+<?php endif; ?>
+
+<!-- Instructions -->
+<div class="p-4 rounded-DEFAULT bg-surface-container-low border border-outline-variant/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-on-surface-variant mb-space-lg">
+  <div class="flex items-center gap-2">
+    <span class="material-symbols-outlined text-tertiary text-[18px]">receipt_long</span>
+    <span>中奖记录均已实时归档，待报销项目可联系管理员或在管理后台录入审批。</span>
+  </div>
+  <div class="text-outline">系统数据实时同步存证</div>
+</div>
+</div>
+
+<script>
+    function filterTab(category) {
+      const allBtn = document.getElementById('tab-btn-all');
+      const pendingBtn = document.getElementById('tab-btn-pending');
+      const compBtn = document.getElementById('tab-btn-completed');
+      const histBtn = document.getElementById('tab-btn-history');
+      
+      const buttons = [allBtn, pendingBtn, compBtn, histBtn];
+      buttons.forEach(btn => {
+        btn.className = "px-5 py-2 rounded-full font-label-md text-label-md transition-all text-on-surface-variant hover:text-on-surface";
+      });
+
+      const items = document.querySelectorAll('.reward-item');
+
+      if (category === 'all') {
+        allBtn.className = "px-5 py-2 rounded-full font-label-md text-label-md transition-all bg-primary-container text-on-primary-container shadow-sm";
+        items.forEach(el => {
+          if (el.classList.contains('reward-history')) {
+            el.classList.add('hidden');
+          } else {
+            el.classList.remove('hidden');
+          }
         });
-    });
-    </script>
-</body>
-</html>
+      } else if (category === 'pending') {
+        pendingBtn.className = "px-5 py-2 rounded-full font-label-md text-label-md transition-all bg-primary-container text-on-primary-container shadow-sm";
+        items.forEach(el => {
+          if (el.classList.contains('reward-pending')) {
+            el.classList.remove('hidden');
+          } else {
+            el.classList.add('hidden');
+          }
+        });
+      } else if (category === 'completed') {
+        compBtn.className = "px-5 py-2 rounded-full font-label-md text-label-md transition-all bg-primary-container text-on-primary-container shadow-sm";
+        items.forEach(el => {
+          if (el.classList.contains('reward-completed')) {
+            el.classList.remove('hidden');
+          } else {
+            el.classList.add('hidden');
+          }
+        });
+      } else if (category === 'history') {
+        histBtn.className = "px-5 py-2 rounded-full font-label-md text-label-md transition-all bg-primary-container text-on-primary-container shadow-sm";
+        items.forEach(el => el.classList.remove('hidden'));
+      }
+    }
+  </script>
+</div></main>
+
+<!-- Global Footer -->
+<footer class="w-full bg-surface-container-lowest border-t border-outline-variant/30 py-space-xl mt-auto">
+<div class="max-w-7xl mx-auto px-gutter flex flex-col sm:flex-row items-center justify-between gap-4 text-on-surface-variant text-body-sm">
+<div class="flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-primary"></span>
+<span><?php echo SITE_NAME; ?> 组委会技术支持</span>
+</div>
+<div>© <?php echo date('Y'); ?> 内部抽奖系统 · 严禁外传</div>
+</div>
+</footer>
+</body></html>

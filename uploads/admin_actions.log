@@ -46,3 +46,6 @@
 2026-09-22 16:45:46	127.0.0.1	admin	quick_expense	成功	{"record_id":154,"expense_id":"1","amount":"0.00"}
 2026-09-22 16:49:59	127.0.0.1	admin	get_records	成功	{"page":1,"keyword":""}
 2026-09-22 16:59:19	127.0.0.1	admin	logout	成功	管理员退出登录
+2026-09-22 17:21:45	127.0.0.1	admin	login	成功	管理员登录成功
+2026-09-22 17:22:07	127.0.0.1	admin	set_user_times	成功	{"user_id":27,"project_id":4,"times":12,"is_visible":1}
+2026-09-22 17:33:10	127.0.0.1	admin	edit_prize	成功	{"id":23,"project_id":4,"name":"超市卡100元*2","quantity":999999,"probability":1}

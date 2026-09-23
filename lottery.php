@@ -52,8 +52,8 @@ try {
         throw new Exception('您没有剩余的抽奖次数');
     }
     
-    // 获取所有可用奖品
-    $stmt = $pdo->prepare("SELECT id, name, image, remaining_quantity, probability FROM prizes WHERE project_id = ? AND remaining_quantity > 0 ORDER BY sort_order, id FOR UPDATE");
+    // 获取所有可用奖品（过滤掉概率为0%的奖品）
+    $stmt = $pdo->prepare("SELECT id, name, image, remaining_quantity, probability FROM prizes WHERE project_id = ? AND remaining_quantity > 0 AND probability > 0 ORDER BY sort_order, id FOR UPDATE");
     $stmt->execute([$project_id]);
     $available_prizes = $stmt->fetchAll();
     
