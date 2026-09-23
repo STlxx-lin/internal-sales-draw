@@ -426,3 +426,144 @@ button[onclick*="refresh"]:hover {
 #ud-records-empty-match.hidden {
     display: none !important;
 }
+
+/* ==================== 数据比对面板与双栏布局 ==================== */
+#user-detail-modal > div {
+    width: min(1380px, 96vw) !important;
+    max-width: 96vw !important;
+    height: 90vh !important;
+    max-height: 92vh !important;
+}
+
+.ud-dual-wrap {
+    display: flex;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.ud-dual-left {
+    flex: 1 1 0%;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: #ffffff;
+}
+
+.ud-dual-right {
+    width: 480px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    background: #f8fafc;
+    border-left: 1px solid #e2e8f0;
+    overflow: hidden;
+    transition: width 0.2s ease, transform 0.2s ease, opacity 0.2s ease;
+}
+
+.ud-dual-right.is-collapsed {
+    width: 0 !important;
+    min-width: 0 !important;
+    border-left: none !important;
+    overflow: hidden !important;
+    opacity: 0;
+    pointer-events: none;
+}
+
+/* 比对卡片 */
+.cp-card {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-left-width: 4px;
+    border-radius: 10px;
+    padding: 10px 12px;
+    transition: all 0.15s ease;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+}
+
+.cp-card:hover {
+    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.06);
+    transform: translateY(-1px);
+}
+
+/* 已报销 (完全匹配) */
+.cp-card.is-used {
+    border-left-color: #10b981;
+    background: #f0fdf4;
+}
+
+/* 待报销 (系统有中奖但未报销) */
+.cp-card.is-pending {
+    border-left-color: #f59e0b;
+    background: #fffbeb;
+}
+
+/* 系统缺失 (外部有登记但系统无中奖) */
+.cp-card.is-missing {
+    border-left-color: #f43f5e;
+    background: #fff1f2;
+}
+
+.cp-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 7px;
+    border-radius: 9999px;
+    line-height: 1.3;
+}
+
+.cp-badge-used {
+    background: #d1fae5;
+    color: #065f46;
+}
+
+.cp-badge-pending {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.cp-badge-missing {
+    background: #ffe4e6;
+    color: #9f1239;
+}
+
+.cp-quick-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: #10b981;
+    color: #ffffff;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 3px 8px;
+    border-radius: 6px;
+    transition: background 0.15s ease;
+    cursor: pointer;
+    border: none;
+}
+
+.cp-quick-btn:hover {
+    background: #059669;
+}
+
+@media (max-width: 900px) {
+    #user-detail-modal > div {
+        width: 98vw !important;
+        max-width: 98vw !important;
+        height: 94vh !important;
+    }
+    .ud-dual-wrap {
+        flex-direction: column;
+    }
+    .ud-dual-right {
+        width: 100% !important;
+        border-left: none;
+        border-top: 1px solid #e2e8f0;
+        max-height: 45vh;
+    }
+}
+

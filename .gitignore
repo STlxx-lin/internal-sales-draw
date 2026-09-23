@@ -1,0 +1,8 @@
+# 日志文件
+*.log
+uploads/*.log
+logs/
+
+# 系统与缓存文件
+.DS_Store
+Thumbs.db

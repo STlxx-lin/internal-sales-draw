@@ -266,11 +266,13 @@ logUserAction('index_view', '成功', ['user_id' => $user['id'], 'project_id' =>
 <!-- Rotating SVG Wheel -->
 <div class="w-full h-full rounded-full transition-transform duration-[4500ms] cubic-bezier(0.15,0.85,0.1,1) overflow-hidden shadow-2xl" id="wheel-element">
 <?php
-// 构建转盘扇区数据：包含当前项目的所有真实奖品，并在末尾添加一个"谢谢参与"扇区
+// 构建转盘扇区数据：包含当前项目的所有真实奖品
 $wheel_items = [];
+$total_prize_probability = 0;
 foreach ($prizes as $p) {
     // 确定对应的等级
     $prob = (float)($p['probability'] ?? 0);
+    $total_prize_probability += $prob;
     $prob_rank = array_search($prob, $distinct_probs);
     if ($prob_rank === false) $prob_rank = 99;
     
@@ -290,17 +292,20 @@ foreach ($prizes as $p) {
         'is_win' => true
     ];
 }
-// 补充谢谢参与扇区
-$wheel_items[] = [
-    'id' => 0,
-    'name' => '谢谢参与',
-    'level' => '再接再厉',
-    'probability' => 0,
-    'is_win' => false
-];
+// 如果奖品没有空白区域（奖品总概率达到或超过100%），则不显示"谢谢参与"；
+// 仅当总概率不足100%（存在未中奖空白区）或没有可用奖品时，才补充"谢谢参与"扇区
+if (empty($wheel_items) || round($total_prize_probability, 2) < 100) {
+    $wheel_items[] = [
+        'id' => 0,
+        'name' => '谢谢参与',
+        'level' => '再接再厉',
+        'probability' => max(0, round(100 - $total_prize_probability, 2)),
+        'is_win' => false
+    ];
+}
 
 $segment_count = count($wheel_items);
-$angle_per_segment = 360 / $segment_count;
+$angle_per_segment = $segment_count > 0 ? (360 / $segment_count) : 360;
 ?>
 <svg class="w-full h-full" viewBox="0 0 400 400">
 <defs>
@@ -343,6 +348,22 @@ $angle_per_segment = 360 / $segment_count;
 
 <!-- 动态生成所有扇区切片与文字 -->
 <?php 
+if ($segment_count === 1): 
+    $item = $wheel_items[0];
+    $fill = 'url(#grad-tier-0)';
+    $level_color = '#fef08a';
+?>
+<circle cx="200" cy="200" r="200" fill="<?php echo $fill; ?>" stroke="#1e1b4b" stroke-width="1.5"></circle>
+<g style="filter: drop-shadow(0 1px 2px rgba(0,0,0,0.9));">
+  <?php if (!empty($show_prize_level) && !empty($item['level'])): ?>
+    <text x="200" y="115" fill="<?php echo $level_color; ?>" font-family="Rubik" font-size="12" font-weight="700" text-anchor="middle" dominant-baseline="central"><?php echo htmlspecialchars($item['level']); ?></text>
+    <text x="200" y="145" fill="#ffffff" font-size="14" font-weight="600" text-anchor="middle" dominant-baseline="central"><?php echo htmlspecialchars(mb_substr($item['name'], 0, 8)); ?></text>
+  <?php else: ?>
+    <text x="200" y="130" fill="#ffffff" font-size="15" font-weight="700" text-anchor="middle" dominant-baseline="central"><?php echo htmlspecialchars(mb_substr($item['name'], 0, 10)); ?></text>
+  <?php endif; ?>
+</g>
+<?php 
+else:
 for ($i = 0; $i < $segment_count; $i++): 
     $item = $wheel_items[$i];
     $start_deg = $i * $angle_per_segment;
@@ -405,7 +426,10 @@ for ($i = 0; $i < $segment_count; $i++):
     <text x="<?php echo 200 + 138; ?>" y="200" fill="#ffffff" font-size="<?php echo $segment_count > 12 ? '11' : ($segment_count > 8 ? '12.5' : '13.5'); ?>" font-weight="700" text-anchor="middle" dominant-baseline="central"><?php echo htmlspecialchars(mb_substr($item['name'], 0, 8)); ?></text>
   <?php endif; ?>
 </g>
-<?php endfor; ?>
+<?php 
+endfor; 
+endif;
+?>
 </svg>
 </div>
 <!-- Top Wheel Pointer (Triangle pointer pointing down) -->
@@ -557,12 +581,11 @@ foreach ($prizes as $idx => $prize):
     }
 ?>
 <div class="relative rounded-xl p-4 bg-surface-container border <?php echo $tier_card_class; ?> flex flex-col justify-between transition-all hover:border-primary/50 <?php echo $is_empty ? 'opacity-40' : ''; ?>">
+<?php if (!empty($show_prize_level)): ?>
 <div class="flex items-center justify-between gap-1 mb-2">
-  <?php if (!empty($show_prize_level)): ?>
-    <span class="text-[10px] font-bold px-2 py-0.5 rounded-full <?php echo $tier_tag_class; ?>"><?php echo $tier_name; ?></span>
-  <?php endif; ?>
-  <span class="text-[10px] text-on-surface-variant/80 font-mono <?php echo empty($show_prize_level) ? 'ml-auto' : ''; ?>"><?php echo number_format($prob, 1); ?>%</span>
+  <span class="text-[10px] font-bold px-2 py-0.5 rounded-full <?php echo $tier_tag_class; ?>"><?php echo $tier_name; ?></span>
 </div>
+<?php endif; ?>
 <div>
 <div class="w-12 h-12 rounded-xl <?php echo $tier_icon_class; ?> flex items-center justify-center mb-3">
 <span class="material-symbols-outlined text-28px"><?php echo $tier_icon; ?></span>

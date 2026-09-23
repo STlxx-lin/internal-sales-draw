@@ -79,7 +79,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                          AND er.reason REGEXP CONCAT('抽奖记录 #', lr.id, '([^0-9]|$)')
                     WHERE lr.user_id = ?
                     ORDER BY lr.created_at DESC, lr.id DESC
-                    LIMIT 50
+                    LIMIT 200
                 ");
                 $stmt->execute([$user_id]);
                 $record_list = $stmt->fetchAll();
@@ -161,7 +161,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'success' => true,
                     'title' => $user['name'] . '详情',
                     'info_html' => $info_html,
-                    'html' => $detail_html
+                    'html' => $detail_html,
+                    'user' => [
+                        'id' => (int)$user['id'],
+                        'name' => $user['name'],
+                        'ip_address' => $user['ip_address'],
+                        'created_at' => $user['created_at']
+                    ],
+                    'records' => array_map(function($r) {
+                        return [
+                            'id' => (int)$r['id'],
+                            'project_id' => (int)$r['project_id'],
+                            'project_name' => $r['project_name'] ?? '',
+                            'prize_id' => $r['prize_id'] ? (int)$r['prize_id'] : null,
+                            'prize_name' => $r['prize_name'] ?? '未中奖',
+                            'created_at' => $r['created_at'],
+                            'is_used' => (bool)$r['is_used'],
+                            'expense_id' => $r['expense_id'] ? (int)$r['expense_id'] : null,
+                            'expense_amount' => $r['expense_amount'] ? (float)$r['expense_amount'] : null,
+                            'expense_applied_at' => $r['expense_applied_at'] ?? null,
+                        ];
+                    }, $record_list)
                 ]);
                 exit;
             case 'quick_expense':
@@ -330,21 +350,125 @@ require dirname(__DIR__) . '/views/admin/header.php';
     </div>
 </div>
 
-<!-- 用户详情模态框 -->
-<div id="user-detail-modal" role="dialog" aria-modal="true" aria-labelledby="user-detail-title" class="modal fixed inset-0 bg-gray-600 bg-opacity-50 hidden flex items-center justify-center z-50">
-    <div class="bg-white rounded-lg w-full max-w-4xl max-h-[85vh] flex flex-col relative overflow-hidden">
-        <div class="ud-header">
-            <div class="flex items-center justify-between mb-4">
-                <h3 id="user-detail-title" tabindex="-1" class="text-lg font-bold text-gray-800">用户详情</h3>
-                <button type="button" onclick="hideModal('user-detail-modal')" class="ud-close" aria-label="关闭用户详情">
-                    <i class="fa fa-times"></i>
+<!-- 用户详情模态框（支持双栏数据比对） -->
+<div id="user-detail-modal" role="dialog" aria-modal="true" aria-labelledby="user-detail-title" class="modal fixed inset-0 bg-gray-900 bg-opacity-60 hidden flex items-center justify-center z-50 p-2 sm:p-4">
+    <div class="bg-white rounded-2xl w-full max-w-[1360px] h-[90vh] max-h-[92vh] flex flex-col relative overflow-hidden shadow-2xl border border-gray-200">
+        <!-- 弹窗全局顶栏 -->
+        <div class="px-6 py-3.5 bg-white border-b border-gray-200 flex items-center justify-between flex-shrink-0">
+            <div class="flex items-center space-x-3">
+                <h3 id="user-detail-title" tabindex="-1" class="text-base font-bold text-gray-800">用户详情</h3>
+                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-teal-50 text-teal-700 border border-teal-200">
+                    <i class="fa fa-columns mr-1 text-[11px]"></i>双栏数据对照
+                </span>
+            </div>
+            <div class="flex items-center space-x-2">
+                <button type="button" id="btn-toggle-compare" onclick="toggleComparePanel()" class="px-3 py-1.5 text-xs font-medium rounded-lg border border-teal-200 bg-teal-50 text-teal-700 hover:bg-teal-100 flex items-center gap-1.5 transition" title="展开或折叠右侧数据比对面板">
+                    <i class="fa fa-balance-scale"></i>
+                    <span>比对面板</span>
+                    <span id="compare-user-badge" class="bg-teal-600 text-white rounded-full px-1.5 py-0.2 text-[10px]">0条</span>
+                </button>
+                <button type="button" onclick="hideModal('user-detail-modal')" class="ud-close text-gray-400 hover:text-gray-600 hover:bg-gray-100 p-1.5 rounded-full transition" aria-label="关闭用户详情">
+                    <i class="fa fa-times text-lg"></i>
                 </button>
             </div>
-            <div id="user-detail-info"></div>
         </div>
-        <div id="user-detail-body" class="ud-body"></div>
-        <div class="p-4 border-t border-gray-200 flex justify-end bg-gray-50 rounded-b-lg">
-            <button type="button" onclick="hideModal('user-detail-modal')" class="px-4 py-2 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50">
+
+        <!-- 弹窗主体双栏容器 -->
+        <div class="ud-dual-wrap flex flex-1 min-h-0 overflow-hidden">
+            <!-- 左栏：系统详情信息及抽奖/报销明细（原功能完整保留） -->
+            <div class="ud-dual-left flex-1 min-w-0 flex flex-col overflow-hidden bg-white">
+                <div class="ud-header flex-shrink-0 border-b border-gray-100 p-6 pb-4 bg-white overflow-y-auto max-h-[220px]">
+                    <div id="user-detail-info"></div>
+                </div>
+                <div id="user-detail-body" class="ud-body flex-1 overflow-y-auto"></div>
+            </div>
+
+            <!-- 右栏（截图红框标注处）：数据比对工作台 -->
+            <div id="ud-compare-panel" class="ud-dual-right w-[460px] xl:w-[500px] flex-shrink-0 flex flex-col bg-slate-50 border-l border-gray-200 overflow-hidden transition-all duration-200">
+                <!-- 1. 工作台顶栏 -->
+                <div class="p-3.5 bg-white border-b border-gray-200 flex items-center justify-between flex-shrink-0">
+                    <div class="flex items-center gap-2">
+                        <i class="fa fa-sliders text-teal-600"></i>
+                        <span class="text-sm font-bold text-gray-800">数据比对</span>
+                        <span id="compare-current-user-tag" class="text-xs px-2 py-0.5 rounded font-medium bg-emerald-50 text-emerald-700 border border-emerald-200"></span>
+                    </div>
+                    <div class="flex items-center gap-1.5 text-xs">
+                        <button type="button" onclick="switchCompareHideAccurate()" id="btn-compare-hide-toggle" class="px-2 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 rounded border border-amber-200 transition font-medium" title="准确匹配项不显示，优先排查未匹配/缺失项">
+                            <i class="fa fa-eye-slash mr-1 text-amber-600"></i><span id="btn-compare-hide-text">仅显未匹配</span>
+                        </button>
+                        <button type="button" onclick="toggleCompareInput(true)" class="px-2 py-1 bg-gray-50 hover:bg-gray-100 text-gray-700 rounded border border-gray-200 transition font-medium" title="编辑/粘贴外部文本数据">
+                            <i class="fa fa-pencil-square-o mr-1 text-teal-600"></i>编辑数据
+                        </button>
+                        <button type="button" onclick="switchCompareFilter()" id="btn-compare-filter-toggle" class="px-2 py-1 bg-gray-50 hover:bg-gray-100 text-teal-700 rounded border border-teal-200 transition font-medium" title="切换过滤范围">
+                            仅看当前人
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 2. 外部数据录入抽屉 (可折叠) -->
+                <div id="ud-compare-input-drawer" class="hidden p-3.5 bg-amber-50 border-b border-amber-200 flex-shrink-0">
+                    <div class="flex justify-between items-center mb-1.5 text-xs text-amber-900 font-semibold">
+                        <span>粘贴外部数据 (日期 姓名 奖品/金额 报销状态)</span>
+                        <div class="space-x-1.5">
+                            <button type="button" onclick="loadDefaultCompareSample()" class="text-teal-700 hover:underline">载入示例数据</button>
+                            <span class="text-gray-300">|</span>
+                            <button type="button" onclick="clearCompareData()" class="text-rose-600 hover:underline">清空</button>
+                            <span class="text-gray-300">|</span>
+                            <button type="button" onclick="toggleCompareInput(false)" class="text-gray-500 hover:underline">收起</button>
+                        </div>
+                    </div>
+                    <textarea id="ud-compare-textarea" rows="6" class="w-full text-xs font-mono p-2 border border-amber-300 rounded bg-white text-gray-800 leading-relaxed focus:ring-1 focus:ring-teal-500 outline-none" placeholder="2026-01-12&#9;Elaine&#9;蛋糕100元&#9;已报销&#10;2026-08-18&#9;Elaine&#9;蛋糕50元&#9;未报销"></textarea>
+                    <div class="mt-2 flex justify-between items-center">
+                        <span class="text-[11px] text-amber-700">支持Tab制表符或空格分列，每行一条（支持附带已报销/未报销）</span>
+                        <div class="flex gap-2">
+                            <button type="button" onclick="toggleCompareInput(false)" class="px-2.5 py-1 text-xs border border-gray-300 rounded bg-white text-gray-600 hover:bg-gray-50">取消</button>
+                            <button type="button" onclick="saveAndApplyCompareData()" class="px-3 py-1 text-xs bg-teal-600 text-white rounded font-medium hover:bg-teal-700 shadow-sm flex items-center gap-1">
+                                <i class="fa fa-check"></i>保存并比对
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 3. 对账统计指标卡片 -->
+                <div class="p-3 bg-white border-b border-gray-200 grid grid-cols-4 gap-2 flex-shrink-0 text-center">
+                    <div class="bg-gray-50 p-2 rounded-lg border border-gray-100">
+                        <span class="block text-[11px] text-gray-500">外部登记</span>
+                        <strong id="cp-stat-total" class="text-base font-bold text-gray-800">0</strong>
+                    </div>
+                    <div class="bg-rose-50 p-2 rounded-lg border border-rose-100">
+                        <span class="block text-[11px] text-rose-700">未匹配/缺失</span>
+                        <strong id="cp-stat-missing" class="text-base font-bold text-rose-700">0</strong>
+                    </div>
+                    <div class="bg-emerald-50 p-2 rounded-lg border border-emerald-100">
+                        <span class="block text-[11px] text-emerald-700">准确匹配(已藏)</span>
+                        <strong id="cp-stat-used" class="text-base font-bold text-emerald-700">0</strong>
+                    </div>
+                    <div class="bg-amber-50 p-2 rounded-lg border border-amber-100">
+                        <span class="block text-[11px] text-amber-700">待报销匹配</span>
+                        <strong id="cp-stat-pending" class="text-base font-bold text-amber-700">0</strong>
+                    </div>
+                </div>
+
+                <!-- 4. 比对明细卡片列表 -->
+                <div id="ud-compare-list" class="flex-1 overflow-y-auto p-3 space-y-2.5">
+                    <!-- 动态渲染比对卡片 -->
+                </div>
+
+                <!-- 5. 底部系统未对账项目提示 -->
+                <div id="ud-compare-system-surplus" class="p-2.5 bg-gray-100 border-t border-gray-200 text-xs text-gray-600 flex items-center justify-between flex-shrink-0">
+                    <span id="cp-stat-surplus-desc"><i class="fa fa-info-circle mr-1 text-teal-600"></i>系统暂无未登记中奖</span>
+                    <button type="button" onclick="showSystemSurplusDetail()" id="btn-show-surplus" class="text-teal-700 font-medium hover:underline hidden">查看未登记项</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 弹窗底栏 -->
+        <div class="px-6 py-3 border-t border-gray-200 flex justify-between items-center bg-gray-50 rounded-b-2xl flex-shrink-0">
+            <div id="compare-summary-tip" class="text-xs text-gray-500 flex items-center gap-1.5">
+                <i class="fa fa-check-circle text-emerald-600"></i>
+                <span>比对数据已保存在本地，与系统抽奖与报销记录保持实时对账</span>
+            </div>
+            <button type="button" onclick="hideModal('user-detail-modal')" class="px-5 py-2 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-100 transition shadow-sm">
                 关闭
             </button>
         </div>
@@ -458,6 +582,9 @@ function showUserDetail(userId, trigger, keepOpen = false) {
             body.innerHTML = data.html;
             document.getElementById('user-detail-title').textContent = data.title;
             userRecordFilterState = { status: 'all', keyword: '' };
+            currentDetailUser = data.user || null;
+            currentDetailRecords = data.records || [];
+            renderCompareWorkbench();
         } else {
             body.innerHTML = '<div class="ud-empty"><i class="fa fa-exclamation-circle text-red-500"></i><strong>加载失败</strong><p>' + (data.message || '未知错误') + '</p></div>';
         }
@@ -593,7 +720,7 @@ function submitQuickExpense(e) {
             hideModal('quick-expense-modal');
             showAdminToast('报销成功 · 已生成报销单 #' + data.expense_id);
             if (currentExpenseUserId) {
-                // 就地静默刷新用户详情，保持抽奖与报销Tab打开
+                // 就地静默刷新用户详情，保持抽奖与报销Tab打开并刷新比对
                 showUserDetail(currentExpenseUserId, null, true);
                 setTimeout(() => switchUserDetailTab('records'), 50);
             } else if (currentExpenseBtn) {
@@ -612,6 +739,436 @@ function submitQuickExpense(e) {
         errEl.textContent = '网络中断，请稍后重试';
         errEl.classList.remove('hidden');
     });
+}
+
+// ==================== 数据比对工作台前端引擎 ====================
+const DEFAULT_COMPARE_TEXT = "2026-01-12\tElaine\t蛋糕100元\t已报销\n";
+
+let currentDetailUser = null;
+let currentDetailRecords = [];
+let compareFilterOnlyCurrent = true;
+let compareHideAccurate = true; // 默认：匹配准确项不显示，优先排查未匹配/缺失项
+let comparePanelCollapsed = false;
+let currentSurplusRecords = [];
+
+function getCompareRawText() {
+    const saved = localStorage.getItem('admin_user_compare_raw_text');
+    if (saved !== null && saved.trim() !== '') return saved;
+    return DEFAULT_COMPARE_TEXT;
+}
+
+function setCompareRawText(text) {
+    localStorage.setItem('admin_user_compare_raw_text', text);
+}
+
+function switchCompareHideAccurate() {
+    compareHideAccurate = !compareHideAccurate;
+    const btnText = document.getElementById('btn-compare-hide-text');
+    const btn = document.getElementById('btn-compare-hide-toggle');
+    if (btnText && btn) {
+        if (compareHideAccurate) {
+            btnText.textContent = '仅显未匹配';
+            btn.classList.remove('bg-gray-100', 'text-gray-700', 'border-gray-200');
+            btn.classList.add('bg-amber-50', 'text-amber-800', 'border-amber-200');
+        } else {
+            btnText.textContent = '显示全部';
+            btn.classList.remove('bg-amber-50', 'text-amber-800', 'border-amber-200');
+            btn.classList.add('bg-gray-100', 'text-gray-700', 'border-gray-200');
+        }
+    }
+    renderCompareWorkbench();
+}
+
+function toggleComparePanel() {
+    const panel = document.getElementById('ud-compare-panel');
+    const btn = document.getElementById('btn-toggle-compare');
+    if (!panel) return;
+    comparePanelCollapsed = !comparePanelCollapsed;
+    if (comparePanelCollapsed) {
+        panel.classList.add('is-collapsed');
+        if (btn) {
+            btn.classList.remove('bg-teal-50', 'text-teal-700', 'border-teal-200');
+            btn.classList.add('bg-gray-100', 'text-gray-500', 'border-gray-200');
+        }
+    } else {
+        panel.classList.remove('is-collapsed');
+        if (btn) {
+            btn.classList.add('bg-teal-50', 'text-teal-700', 'border-teal-200');
+            btn.classList.remove('bg-gray-100', 'text-gray-500', 'border-gray-200');
+        }
+    }
+}
+
+function toggleCompareInput(show) {
+    const drawer = document.getElementById('ud-compare-input-drawer');
+    const textarea = document.getElementById('ud-compare-textarea');
+    if (!drawer) return;
+    if (show) {
+        textarea.value = getCompareRawText();
+        drawer.classList.remove('hidden');
+        textarea.focus();
+    } else {
+        drawer.classList.add('hidden');
+    }
+}
+
+function loadDefaultCompareSample() {
+    const textarea = document.getElementById('ud-compare-textarea');
+    if (textarea) textarea.value = DEFAULT_COMPARE_TEXT;
+}
+
+function clearCompareData() {
+    if (confirm('确定要清空外部比对数据吗？')) {
+        setCompareRawText('');
+        const textarea = document.getElementById('ud-compare-textarea');
+        if (textarea) textarea.value = '';
+        renderCompareWorkbench();
+        showAdminToast('外部比对数据已清空');
+    }
+}
+
+function saveAndApplyCompareData() {
+    const textarea = document.getElementById('ud-compare-textarea');
+    if (!textarea) return;
+    const val = textarea.value.trim();
+    setCompareRawText(val);
+    toggleCompareInput(false);
+    renderCompareWorkbench();
+    showAdminToast('比对数据已更新');
+}
+
+function switchCompareFilter() {
+    compareFilterOnlyCurrent = !compareFilterOnlyCurrent;
+    const btn = document.getElementById('btn-compare-filter-toggle');
+    if (btn) {
+        if (compareFilterOnlyCurrent) {
+            btn.textContent = '仅看当前人';
+            btn.classList.remove('text-gray-600');
+            btn.classList.add('text-teal-700');
+        } else {
+            btn.textContent = '显示全部人';
+            btn.classList.remove('text-teal-700');
+            btn.classList.add('text-gray-600');
+        }
+    }
+    renderCompareWorkbench();
+}
+
+function normalizePrizeName(str) {
+    if (!str) return '';
+    return str
+        .trim()
+        .replace(/[（]/g, '(')
+        .replace(/[）]/g, ')')
+        .replace(/\s+/g, '')
+        .toLowerCase();
+}
+
+function parseCompareLines(rawText) {
+    if (!rawText) return [];
+    const lines = rawText.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
+    const parsed = [];
+
+    lines.forEach((line, index) => {
+        // 先检查并剥离行末可能附带的报销状态词（已报销 / 未报销 / 待报销）
+        let extStatus = '';
+        let lineClean = line;
+        const statusMatch = line.match(/[\s\t]+(已报销|未报销|待报销)$/);
+        if (statusMatch) {
+            extStatus = statusMatch[1];
+            lineClean = line.substring(0, statusMatch.index).trim();
+        }
+
+        let parts = lineClean.split('\t').map(p => p.trim()).filter(p => p.length > 0);
+        if (parts.length < 2) {
+            parts = lineClean.split(/\s{2,}|\s*,\s*/).map(p => p.trim()).filter(p => p.length > 0);
+            if (parts.length < 2) {
+                parts = lineClean.split(/\s+/).map(p => p.trim()).filter(p => p.length > 0);
+            }
+        }
+
+        let date = '';
+        let user = '';
+        let prize = '';
+
+        const dateRegex = /\b(\d{4}[-/]\d{1,2}[-/]\d{1,2})\b/;
+        const dateMatch = lineClean.match(dateRegex);
+        if (dateMatch) {
+            date = dateMatch[1].replace(/\//g, '-');
+        }
+
+        if (parts.length >= 3) {
+            user = parts[1];
+            prize = parts.slice(2).join(' ');
+        } else if (parts.length === 2) {
+            if (dateMatch && parts[0].includes(dateMatch[1])) {
+                prize = parts[1];
+            } else {
+                user = parts[0];
+                prize = parts[1];
+            }
+        } else {
+            prize = lineClean;
+        }
+
+        parsed.push({
+            id: index + 1,
+            date: date || '未注日期',
+            user: user || '未注姓名',
+            prize: prize || lineClean,
+            extStatus: extStatus,
+            raw: line
+        });
+    });
+
+    return parsed;
+}
+
+function isUserMatch(externalUserName, systemUser) {
+    if (!systemUser || !systemUser.name) return false;
+    const ext = (externalUserName || '').trim().toLowerCase();
+    const sys = (systemUser.name || '').trim().toLowerCase();
+    if (!ext) return true;
+
+    if (sys.includes(ext) || ext.includes(sys)) return true;
+
+    const tokens = sys.split(/[-_\s/]+/).map(t => t.trim().toLowerCase()).filter(t => t.length > 0);
+    for (const t of tokens) {
+        if (t === ext || t.includes(ext) || ext.includes(t)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function renderCompareWorkbench() {
+    const listEl = document.getElementById('ud-compare-list');
+    const badgeEl = document.getElementById('compare-user-badge');
+    const userTagEl = document.getElementById('compare-current-user-tag');
+    const statTotalEl = document.getElementById('cp-stat-total');
+    const statUsedEl = document.getElementById('cp-stat-used');
+    const statPendingEl = document.getElementById('cp-stat-pending');
+    const statMissingEl = document.getElementById('cp-stat-missing');
+    const surplusDescEl = document.getElementById('cp-stat-surplus-desc');
+    const btnSurplusEl = document.getElementById('btn-show-surplus');
+    if (!listEl) return;
+
+    if (userTagEl) {
+        userTagEl.textContent = currentDetailUser ? currentDetailUser.name : '全部用户';
+    }
+
+    const rawText = getCompareRawText();
+    const allExternal = parseCompareLines(rawText);
+
+    let targetExternal = allExternal;
+    if (compareFilterOnlyCurrent && currentDetailUser) {
+        targetExternal = allExternal.filter(item => isUserMatch(item.user, currentDetailUser));
+    }
+
+    if (badgeEl) {
+        badgeEl.textContent = targetExternal.length + '条';
+    }
+
+    // 复制系统有效中奖记录，准备进行一对一精准核对
+    const availableSysRecords = (currentDetailRecords || [])
+        .filter(r => Boolean(r.prize_id))
+        .map(r => ({ ...r, matched: false }));
+
+    const compareResults = [];
+    let countAccurateMatched = 0; // 条件全部准确匹配
+    let countPending = 0;         // 待报销
+    let countMissing = 0;         // 未匹配/缺失
+
+    targetExternal.forEach(extItem => {
+        const normExtPrize = normalizePrizeName(extItem.prize);
+        let extTime = NaN;
+        if (extItem.date && extItem.date !== '未注日期') {
+            extTime = new Date(extItem.date.replace(/-/g, '/') + ' 00:00:00').getTime();
+        }
+
+        let bestMatch = null;
+        let minDiffSeconds = Infinity;
+
+        // 遍历系统记录：上下5天范围匹配，奖品名称准确匹配，排他唯一占用
+        for (let i = 0; i < availableSysRecords.length; i++) {
+            const sys = availableSysRecords[i];
+            if (sys.matched) continue;
+
+            const normSysPrize = normalizePrizeName(sys.prize_name);
+            // 奖品名称准确匹配（严格一致）
+            if (normExtPrize !== normSysPrize) continue;
+
+            // 时间校验：上下5天（<= 5 * 86400 秒）
+            let inDateRange = true;
+            let diffSec = 0;
+            if (!isNaN(extTime) && sys.created_at) {
+                const sysTime = new Date(sys.created_at.replace(/-/g, '/')).getTime();
+                diffSec = Math.abs(sysTime - extTime) / 1000;
+                // 允许上下5天范围（加1小时宽容度覆盖时区夏令时微差）
+                if (diffSec > 5 * 86400 + 3600) {
+                    inDateRange = false;
+                }
+            }
+
+            if (inDateRange) {
+                if (diffSec < minDiffSeconds) {
+                    minDiffSeconds = diffSec;
+                    bestMatch = sys;
+                }
+            }
+        }
+
+        if (bestMatch) {
+            bestMatch.matched = true;
+            countAccurateMatched++;
+            if (!bestMatch.is_used) {
+                countPending++;
+            }
+            compareResults.push({
+                ...extItem,
+                status: bestMatch.is_used ? 'used' : 'pending',
+                isAccurate: true,
+                sysRecord: bestMatch,
+                diffDays: (minDiffSeconds / 86400).toFixed(1),
+                statusText: bestMatch.is_used ? '准确匹配(已报销)' : '准确匹配(待报销)'
+            });
+        } else {
+            countMissing++;
+            compareResults.push({
+                ...extItem,
+                status: 'missing',
+                isAccurate: false,
+                sysRecord: null,
+                diffDays: null,
+                statusText: '上下5天无准确匹配'
+            });
+        }
+    });
+
+    // 统计系统多出未被匹配的中奖
+    currentSurplusRecords = availableSysRecords.filter(r => !r.matched);
+
+    if (statTotalEl) statTotalEl.textContent = targetExternal.length;
+    if (statUsedEl) statUsedEl.textContent = countAccurateMatched;
+    if (statPendingEl) statPendingEl.textContent = countPending;
+    if (statMissingEl) statMissingEl.textContent = countMissing;
+
+    if (surplusDescEl && btnSurplusEl) {
+        if (currentSurplusRecords.length > 0) {
+            surplusDescEl.innerHTML = '<i class="fa fa-exclamation-triangle text-amber-500 mr-1"></i>系统还有 <strong class="text-amber-600 font-bold">' + currentSurplusRecords.length + '</strong> 条中奖外部未登记';
+            btnSurplusEl.classList.remove('hidden');
+        } else {
+            surplusDescEl.innerHTML = '<i class="fa fa-check-circle text-emerald-600 mr-1"></i>系统中奖项与外部完全对应无多余';
+            btnSurplusEl.classList.add('hidden');
+        }
+    }
+
+    if (compareResults.length === 0) {
+        listEl.innerHTML = '<div class="ud-empty py-12"><i class="fa fa-inbox text-gray-300 text-3xl mb-2"></i><strong class="text-gray-600 text-sm">暂无该用户的外部比对数据</strong><p class="text-gray-400 text-xs mt-1">点击上方“编辑数据”粘贴或载入示例外部明细</p></div>';
+        return;
+    }
+
+    // 排序逻辑：优先显示没有匹配到的（missing 排在最前）
+    compareResults.sort((a, b) => {
+        if (a.isAccurate === b.isAccurate) return 0;
+        return a.isAccurate ? 1 : -1; // missing (isAccurate=false) 置顶
+    });
+
+    // 过滤逻辑：如果开启了 compareHideAccurate（默认），匹配条件都准确的就不显示
+    const displayList = compareHideAccurate 
+        ? compareResults.filter(r => !r.isAccurate) 
+        : compareResults;
+
+    let html = '';
+
+    // 顶部状态提示栏：提示当前隐藏了多少准确匹配项
+    if (countAccurateMatched > 0) {
+        if (compareHideAccurate) {
+            html += '<div class="p-2.5 rounded-lg bg-emerald-50 border border-emerald-200 text-xs text-emerald-800 flex items-center justify-between">' +
+                '<span><i class="fa fa-check-circle mr-1 text-emerald-600"></i>已自动隐藏 <strong>' + countAccurateMatched + '</strong> 条准确匹配的记录，优先排查未匹配项</span>' +
+                '<button type="button" onclick="switchCompareHideAccurate()" class="text-teal-700 underline font-semibold hover:text-teal-800 text-[11px]">展开查看全部</button>' +
+                '</div>';
+        } else {
+            html += '<div class="p-2.5 rounded-lg bg-gray-100 border border-gray-200 text-xs text-gray-700 flex items-center justify-between">' +
+                '<span><i class="fa fa-eye mr-1 text-gray-500"></i>当前显示全部 ' + compareResults.length + ' 条（含准确匹配 ' + countAccurateMatched + ' 条）</span>' +
+                '<button type="button" onclick="switchCompareHideAccurate()" class="text-amber-700 underline font-semibold hover:text-amber-800 text-[11px]">切换为仅显缺失</button>' +
+                '</div>';
+        }
+    }
+
+    if (displayList.length === 0) {
+        html += '<div class="ud-empty py-12 text-center bg-white rounded-xl border border-dashed border-emerald-300 p-6 my-2">' +
+            '<i class="fa fa-check-circle text-emerald-500 text-4xl mb-2"></i>' +
+            '<div class="text-sm font-bold text-gray-800">全部匹配准确无缺失！</div>' +
+            '<p class="text-xs text-gray-500 mt-1">所有外部登记项均在上下 5 天内准确匹配到系统抽奖记录，已按规则自动隐藏</p>' +
+            '<button type="button" onclick="switchCompareHideAccurate()" class="mt-3 px-3 py-1 text-xs bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded font-medium transition">查看已匹配的明细</button>' +
+            '</div>';
+        listEl.innerHTML = html;
+        return;
+    }
+
+    displayList.forEach((item, idx) => {
+        let cardClass = 'cp-card';
+        let badgeHtml = '';
+        let sysInfoHtml = '';
+
+        if (item.status === 'used') {
+            cardClass += ' is-used';
+            badgeHtml = '<span class="cp-badge cp-badge-used"><i class="fa fa-check-circle"></i>已匹配已报销</span>';
+            const expText = item.sysRecord.expense_amount ? (' · 报销 ¥' + Number(item.sysRecord.expense_amount).toFixed(2)) : '';
+            sysInfoHtml = '<div class="mt-1.5 pt-1.5 border-t border-emerald-100 flex items-center justify-between text-[11px] text-emerald-800">' +
+                '<span><i class="fa fa-link mr-1"></i>系统记录 #' + item.sysRecord.id + ' (' + item.sysRecord.prize_name + ')' + expText + '</span>' +
+                '<span class="text-emerald-600 font-mono text-[10px]">' + item.sysRecord.created_at.substring(0, 16) + ' (相差' + item.diffDays + '天)</span>' +
+                '</div>';
+        } else if (item.status === 'pending') {
+            cardClass += ' is-pending';
+            badgeHtml = '<span class="cp-badge cp-badge-pending"><i class="fa fa-clock-o"></i>已匹配待报销</span>';
+            const safeUserName = currentDetailUser ? currentDetailUser.name.replace(/'/g, "\\'") : '';
+            const safePrizeName = item.sysRecord.prize_name.replace(/'/g, "\\'");
+            sysInfoHtml = '<div class="mt-1.5 pt-1.5 border-t border-amber-100 flex items-center justify-between text-[11px] text-amber-900">' +
+                '<span><i class="fa fa-gift mr-1 text-amber-600"></i>系统抽奖 #' + item.sysRecord.id + '：' + item.sysRecord.prize_name + ' (相差' + item.diffDays + '天)</span>' +
+                '<button type="button" class="cp-quick-btn" onclick="quickExpense(' + item.sysRecord.id + ', \'' + safeUserName + '\', \'' + safePrizeName + '\', ' + item.sysRecord.project_id + ', this)"><i class="fa fa-bolt mr-0.5"></i>快速报销</button>' +
+                '</div>';
+        } else {
+            cardClass += ' is-missing';
+            badgeHtml = '<span class="cp-badge cp-badge-missing"><i class="fa fa-exclamation-triangle"></i>未匹配到</span>';
+            const extStatusBadge = item.extStatus ? ('<span class="ml-1 text-[10px] px-1 py-0.2 rounded bg-rose-100 text-rose-800">外部注：' + item.extStatus + '</span>') : '';
+            sysInfoHtml = '<div class="mt-1.5 pt-1.5 border-t border-rose-100 text-[11px] text-rose-700 flex flex-col gap-0.5">' +
+                '<div class="flex items-center gap-1 font-medium"><i class="fa fa-times-circle"></i>上下 5 天内未匹配到系统抽奖记录' + extStatusBadge + '</div>' +
+                '<div class="text-[10px] text-rose-500">匹配条件：时间范围 ±5 天，奖品名称准确匹配【' + item.prize + '】</div>' +
+                '</div>';
+        }
+
+        html += '<div class="' + cardClass + '">' +
+            '<div class="flex items-center justify-between gap-2">' +
+                '<div class="flex items-center gap-2">' +
+                    '<span class="font-mono text-xs text-gray-500 font-semibold">' + item.date + '</span>' +
+                    '<span class="text-xs px-1.5 py-0.2 bg-gray-100 text-gray-700 rounded font-medium">' + item.user + '</span>' +
+                    (item.extStatus ? '<span class="text-[10px] px-1 py-0.2 rounded ' + (item.extStatus === '已报销' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-gray-100 text-gray-600') + '">' + item.extStatus + '</span>' : '') +
+                '</div>' +
+                '<div>' + badgeHtml + '</div>' +
+            '</div>' +
+            '<div class="mt-1 flex items-center justify-between">' +
+                '<strong class="text-sm font-bold text-gray-900">' + item.prize + '</strong>' +
+                '<span class="text-[11px] text-gray-400 font-mono">#' + item.id + '</span>' +
+            '</div>' +
+            sysInfoHtml +
+            '</div>';
+    });
+
+    listEl.innerHTML = html;
+}
+
+function showSystemSurplusDetail() {
+    if (!currentSurplusRecords || currentSurplusRecords.length === 0) {
+        showAdminToast('系统中暂无多余未登记项');
+        return;
+    }
+    let msg = '【系统中存在、但外部未登记的中奖记录共 ' + currentSurplusRecords.length + ' 条】：\n\n';
+    currentSurplusRecords.forEach(r => {
+        msg += '#' + r.id + ' | ' + r.created_at + ' | ' + r.prize_name + (r.is_used ? ' [已报销]' : ' [待报销]') + '\n';
+    });
+    alert(msg);
 }
 </script>
 
